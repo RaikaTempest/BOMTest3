@@ -52,16 +52,20 @@ class _RuleWizardState extends State<RuleWizard> {
   void initState() {
     super.initState();
     final e = widget.existing;
+
     priority =
         TextEditingController(text: e?.priority.toString() ?? '0');
     expr = TextEditingController(
         text: e == null ? '{}' : jsonEncode(e.expr));
+
     final outputs = e?.outputs.isNotEmpty == true
         ? e!.outputs
         : [OutputSpec(mm: '', qty: null, qtyFormula: null)];
     for (final o in outputs) {
+
       _outputs.add(_OutputFields(
           mm: o.mm, qty: o.qty, qtyFormula: o.qtyFormula));
+
     }
   }
 
@@ -112,8 +116,10 @@ class _RuleWizardState extends State<RuleWizard> {
       Navigator.of(context).pop(widget.parent);
     } catch (e) {
       if (!mounted) return;
+
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Save error: $e')));
+
     }
   }
 
@@ -134,8 +140,10 @@ class _RuleWizardState extends State<RuleWizard> {
             flex: 2,
             child: TextField(
               controller: f.qty,
+
               decoration:
                   const InputDecoration(labelText: 'Qty (optional)'),
+
               keyboardType: TextInputType.number,
             ),
           ),
@@ -145,7 +153,9 @@ class _RuleWizardState extends State<RuleWizard> {
             child: TextField(
               controller: f.qtyFormula,
               decoration: const InputDecoration(
+
                   labelText: 'Qty Formula (optional)'),
+
             ),
           ),
           IconButton(
@@ -189,7 +199,11 @@ class _RuleWizardState extends State<RuleWizard> {
             const SizedBox(height: 8),
             const Text('Outputs'),
             const SizedBox(height: 4),
-            ..._outputs.asMap().entries
+
+            ..._outputs
+                .asMap()
+                .entries
+
                 .map((e) => _buildOutput(e.value, e.key))
                 .toList(),
             TextButton.icon(
