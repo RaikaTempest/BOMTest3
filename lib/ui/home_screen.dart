@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/models.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
-import 'new_job_screen.dart';
+import 'project_screen.dart';
 import 'standards_manager_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -65,10 +65,29 @@ class _JobTabState extends State<_JobTab> {
         parameters: [ParameterDef(key: 'PoleHeight', type: ParamType.number)],
         staticComponents: [StaticComponent(mm: 'MM#BRACE-STD', qty: 2)],
         dynamicComponents: [
-          DynamicComponentDef(name: 'Primary Connector', rules: [
-            RuleDef(expr: {'>=': [ {'var': 'PoleHeight'}, 40 ]}, outputs: [OutputSpec(mm: 'MM#PC-40', qty: 1)]),
-            RuleDef(expr: {'<':  [ {'var': 'PoleHeight'}, 40 ]}, outputs: [OutputSpec(mm: 'MM#PC-35', qty: 1)]),
-          ])
+          DynamicComponentDef(
+            name: 'Primary Connector',
+            rules: [
+              RuleDef(
+                expr: {
+                  '>=': [
+                    {'var': 'PoleHeight'},
+                    40,
+                  ],
+                },
+                outputs: [OutputSpec(mm: 'MM#PC-40', qty: 1)],
+              ),
+              RuleDef(
+                expr: {
+                  '<': [
+                    {'var': 'PoleHeight'},
+                    40,
+                  ],
+                },
+                outputs: [OutputSpec(mm: 'MM#PC-35', qty: 1)],
+              ),
+            ],
+          ),
         ],
       );
       await repo.saveStandard(std);
@@ -89,9 +108,55 @@ class _JobTabState extends State<_JobTab> {
           return Center(child: Text('Load error: ${snap.error}'));
         }
         final standards = snap.data ?? const <StandardDef>[];
-        return NewJobScreen(standards: standards);
+        return Center(
+          child: ElevatedButton(
+            onPressed: () async {
+              final count = await _promptLocationCount(context);
+              if (count != null) {
+                // ignore: use_build_context_synchronously
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder:
+                        (_) => ProjectScreen(
+                          standards: standards,
+                          initialCount: count,
+                        ),
+                  ),
+                );
+              }
+            },
+            child: const Text('New project'),
+          ),
+        );
       },
     );
   }
 }
 
+Future<int?> _promptLocationCount(BuildContext context) async {
+  final controller = TextEditingController(text: '1');
+  return showDialog<int>(
+    context: context,
+    builder:
+        (_) => AlertDialog(
+          title: const Text('Number of work locations'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final n = int.tryParse(controller.text.trim());
+                Navigator.pop(context, n); // may be null
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+  );
+}
