@@ -95,7 +95,7 @@ class _RuleWizardState extends State<RuleWizard> {
       );
 
       final existing = widget.existing;
-      final rules = widget.parent.rules;
+      final rules = List<RuleDef>.of(widget.parent.rules);
       if (existing != null) {
         final index = rules.indexOf(existing);
         if (index >= 0) {
@@ -108,7 +108,13 @@ class _RuleWizardState extends State<RuleWizard> {
       }
 
       if (!mounted) return;
-      Navigator.of(context).pop(widget.parent);
+      Navigator.of(context).pop(
+        DynamicComponentDef(
+          name: widget.parent.name,
+          selectionStrategy: widget.parent.selectionStrategy,
+          rules: rules,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
