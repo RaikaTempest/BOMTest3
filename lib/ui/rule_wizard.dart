@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
@@ -43,9 +41,45 @@ class _OutputFields {
   }
 }
 
+class _ConditionFields {
+  final TextEditingController param = TextEditingController();
+  String op;
+  final TextEditingController value = TextEditingController();
+
+  _ConditionFields({String? param, this.op = '==', String? value}) {
+    this.param.text = param ?? '';
+    this.value.text = value ?? '';
+  }
+
+  void dispose() {
+    param.dispose();
+    value.dispose();
+  }
+
+  Map<String, dynamic> toJsonLogic() {
+    final valText = value.text.trim();
+    dynamic val = int.tryParse(valText);
+    val ??= double.tryParse(valText);
+    if (val == null) {
+      final lower = valText.toLowerCase();
+      if (lower == 'true' || lower == 'false') {
+        val = lower == 'true';
+      } else {
+        val = valText;
+      }
+    }
+    return {
+      op: [
+        {'var': param.text.trim()},
+        val,
+      ],
+    };
+  }
+}
+
 class _RuleWizardState extends State<RuleWizard> {
   late final TextEditingController priority;
-  late final TextEditingController expr;
+  final List<_ConditionFields> _conditions = [];
   final List<_OutputFields> _outputs = [];
 
   @override
@@ -53,30 +87,48 @@ class _RuleWizardState extends State<RuleWizard> {
     super.initState();
     final e = widget.existing;
 
-    priority =
-        TextEditingController(text: e?.priority.toString() ?? '0');
-    expr = TextEditingController(
-        text: e == null ? '{}' : jsonEncode(e.expr));
+    priority = TextEditingController(text: e?.priority.toString() ?? '0');
 
-    final outputs = e?.outputs.isNotEmpty == true
-        ? e!.outputs
-        : [OutputSpec(mm: '', qty: null, qtyFormula: null)];
+    if (e != null) {
+      _loadExpr(e.expr);
+    }
+    if (_conditions.isEmpty) {
+      _conditions.add(_ConditionFields());
+    }
+
+    final outputs =
+        e?.outputs.isNotEmpty == true
+            ? e!.outputs
+            : [OutputSpec(mm: '', qty: null, qtyFormula: null)];
     for (final o in outputs) {
-
-      _outputs.add(_OutputFields(
-          mm: o.mm, qty: o.qty, qtyFormula: o.qtyFormula));
-
+      _outputs.add(
+        _OutputFields(mm: o.mm, qty: o.qty, qtyFormula: o.qtyFormula),
+      );
     }
   }
 
   @override
   void dispose() {
     priority.dispose();
-    expr.dispose();
+    for (final c in _conditions) {
+      c.dispose();
+    }
     for (final o in _outputs) {
       o.dispose();
     }
     super.dispose();
+  }
+
+  void _addCondition() {
+    setState(() {
+      _conditions.add(_ConditionFields());
+    });
+  }
+
+  void _removeCondition(int index) {
+    setState(() {
+      _conditions.removeAt(index);
+    });
   }
 
   void _addOutput() {
@@ -93,8 +145,11 @@ class _RuleWizardState extends State<RuleWizard> {
 
   Future<void> _save() async {
     try {
+      final conds = _conditions.map((e) => e.toJsonLogic()).toList();
+      final Map<String, dynamic> expr =
+          conds.length == 1 ? conds.first : {'and': conds};
       final rule = RuleDef(
-        expr: (jsonDecode(expr.text) as Map).cast<String, dynamic>(),
+        expr: expr,
         outputs: _outputs.map((e) => e.toOutputSpec()).toList(),
         priority: int.tryParse(priority.text) ?? 0,
       );
@@ -117,10 +172,54 @@ class _RuleWizardState extends State<RuleWizard> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Save error: $e')));
-
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Save error: $e')));
     }
+  }
+
+  Widget _buildCondition(_ConditionFields f, int index) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: TextField(
+              controller: f.param,
+              decoration: const InputDecoration(labelText: 'Param'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          DropdownButton<String>(
+            value: f.op,
+            onChanged: (v) {
+              if (v != null) {
+                setState(() {
+                  f.op = v;
+                });
+              }
+            },
+            items:
+                const ['==', '!=', '>', '>=', '<', '<=']
+                    .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                    .toList(),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 3,
+            child: TextField(
+              controller: f.value,
+              decoration: const InputDecoration(labelText: 'Value'),
+            ),
+          ),
+          IconButton(
+            onPressed: () => _removeCondition(index),
+            icon: const Icon(Icons.delete),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildOutput(_OutputFields f, int index) {
@@ -141,8 +240,7 @@ class _RuleWizardState extends State<RuleWizard> {
             child: TextField(
               controller: f.qty,
 
-              decoration:
-                  const InputDecoration(labelText: 'Qty (optional)'),
+              decoration: const InputDecoration(labelText: 'Qty (optional)'),
 
               keyboardType: TextInputType.number,
             ),
@@ -153,9 +251,8 @@ class _RuleWizardState extends State<RuleWizard> {
             child: TextField(
               controller: f.qtyFormula,
               decoration: const InputDecoration(
-
-                  labelText: 'Qty Formula (optional)'),
-
+                labelText: 'Qty Formula (optional)',
+              ),
             ),
           ),
           IconButton(
@@ -165,6 +262,37 @@ class _RuleWizardState extends State<RuleWizard> {
         ],
       ),
     );
+  }
+
+  void _loadExpr(Map<String, dynamic> expr) {
+    _conditions.clear();
+    Map<String, dynamic> m = expr;
+    if (m.containsKey('and')) {
+      final list = m['and'] as List;
+      for (final e in list) {
+        _conditions.add(_conditionFromExpr((e as Map).cast<String, dynamic>()));
+      }
+    } else {
+      _conditions.add(_conditionFromExpr(m));
+    }
+  }
+
+  _ConditionFields _conditionFromExpr(Map<String, dynamic> m) {
+    if (m.isEmpty) return _ConditionFields();
+    final op = m.keys.first;
+    final args = m[op] as List;
+    String param = '';
+    String value = '';
+    if (args.isNotEmpty) {
+      final first = args[0];
+      if (first is Map && first['var'] is String) {
+        param = first['var'] as String;
+      }
+      if (args.length > 1) {
+        value = '${args[1]}';
+      }
+    }
+    return _ConditionFields(param: param, op: op, value: value);
   }
 
   @override
@@ -189,21 +317,24 @@ class _RuleWizardState extends State<RuleWizard> {
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 8),
-            TextField(
-              controller: expr,
-              decoration: const InputDecoration(
-                labelText: 'Expression (JSONLogic)',
-              ),
-              maxLines: 4,
+            const Text('Conditions'),
+            const SizedBox(height: 4),
+            ..._conditions
+                .asMap()
+                .entries
+                .map((e) => _buildCondition(e.value, e.key))
+                .toList(),
+            TextButton.icon(
+              onPressed: _addCondition,
+              icon: const Icon(Icons.add),
+              label: const Text('Add Condition'),
             ),
             const SizedBox(height: 8),
             const Text('Outputs'),
             const SizedBox(height: 4),
-
             ..._outputs
                 .asMap()
                 .entries
-
                 .map((e) => _buildOutput(e.value, e.key))
                 .toList(),
             TextButton.icon(
@@ -217,4 +348,3 @@ class _RuleWizardState extends State<RuleWizard> {
     );
   }
 }
-

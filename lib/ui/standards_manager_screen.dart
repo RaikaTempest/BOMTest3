@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
@@ -81,32 +79,21 @@ class _StandardDetailScreen extends StatefulWidget {
 class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   late final TextEditingController code;
   late final TextEditingController name;
-  late final TextEditingController params;
-  late final TextEditingController statics;
-  late final TextEditingController dynamics;
+  List<ParameterDef> parameters = [];
+  List<StaticComponent> staticComponents = [];
+  List<DynamicComponentDef> dynamicComponents = [];
 
-  Future<void> _openRuleWizard() async {
+  Future<void> _openRuleWizard(int index) async {
     try {
-      final dynList = (jsonDecode(dynamics.text) as List)
-          .map(
-            (e) => DynamicComponentDef.fromJson(
-              (e as Map).cast<String, dynamic>(),
-            ),
-          )
-          .toList();
-      if (dynList.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No dynamic components to edit')),
-        );
-        return;
-      }
-      final comp = dynList.first;
       final updated = await Navigator.of(context).push<DynamicComponentDef>(
-        MaterialPageRoute(builder: (_) => RuleWizard(parent: comp)),
+        MaterialPageRoute(
+          builder: (_) => RuleWizard(parent: dynamicComponents[index]),
+        ),
       );
       if (updated != null) {
-        dynList[0] = updated;
-        dynamics.text = jsonEncode(dynList.map((d) => d.toJson()).toList());
+        setState(() {
+          dynamicComponents[index] = updated;
+        });
       }
     } catch (e) {
       ScaffoldMessenger.of(context)
@@ -120,30 +107,15 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     final e = widget.existing;
     code = TextEditingController(text: e?.code ?? '');
     name = TextEditingController(text: e?.name ?? '');
-    params = TextEditingController(
-      text: e == null
-          ? '[]'
-          : jsonEncode(e.parameters.map((p) => p.toJson()).toList()),
-    );
-    statics = TextEditingController(
-      text: e == null
-          ? '[]'
-          : jsonEncode(e.staticComponents.map((c) => c.toJson()).toList()),
-    );
-    dynamics = TextEditingController(
-      text: e == null
-          ? '[]'
-          : jsonEncode(e.dynamicComponents.map((d) => d.toJson()).toList()),
-    );
+    parameters = e?.parameters.toList() ?? [];
+    staticComponents = e?.staticComponents.toList() ?? [];
+    dynamicComponents = e?.dynamicComponents.toList() ?? [];
   }
 
   @override
   void dispose() {
     code.dispose();
     name.dispose();
-    params.dispose();
-    statics.dispose();
-    dynamics.dispose();
     super.dispose();
   }
 
@@ -152,16 +124,9 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       final std = StandardDef(
         code: code.text.trim(),
         name: name.text.trim(),
-        parameters: (jsonDecode(params.text) as List)
-            .map((e) => ParameterDef.fromJson((e as Map).cast<String, dynamic>()))
-            .toList(),
-        staticComponents: (jsonDecode(statics.text) as List)
-            .map((e) => StaticComponent.fromJson((e as Map).cast<String, dynamic>()))
-            .toList(),
-        dynamicComponents: (jsonDecode(dynamics.text) as List)
-            .map(
-                (e) => DynamicComponentDef.fromJson((e as Map).cast<String, dynamic>()))
-            .toList(),
+        parameters: parameters,
+        staticComponents: staticComponents,
+        dynamicComponents: dynamicComponents,
       );
       await widget.repo.saveStandard(std);
       if (!mounted) return;
@@ -198,29 +163,85 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
               decoration: const InputDecoration(labelText: 'Name'),
             ),
             const SizedBox(height: 8),
-            TextField(
-              controller: params,
-              decoration: const InputDecoration(labelText: 'Parameters (JSON)'),
-              maxLines: 4,
+            const Text('Parameters'),
+            const SizedBox(height: 4),
+            ...parameters
+                .asMap()
+                .entries
+                .map(
+                  (e) => _ParameterEditor(
+                    def: e.value,
+                    onChanged: (p) => setState(() {
+                      parameters[e.key] = p;
+                    }),
+                    onDelete: () => setState(() {
+                      parameters.removeAt(e.key);
+                    }),
+                  ),
+                )
+                .toList(),
+            TextButton.icon(
+              onPressed: () => setState(() {
+                parameters.add(ParameterDef(key: '', type: ParamType.text));
+              }),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Parameter'),
             ),
             const SizedBox(height: 8),
-            TextField(
-              controller: statics,
-              decoration:
-                  const InputDecoration(labelText: 'Static Components (JSON)'),
-              maxLines: 4,
+            const Text('Static Components'),
+            const SizedBox(height: 4),
+            ...staticComponents
+                .asMap()
+                .entries
+                .map(
+                  (e) => _StaticEditor(
+                    comp: e.value,
+                    onChanged: (c) => setState(() {
+                      staticComponents[e.key] = c;
+                    }),
+                    onDelete: () => setState(() {
+                      staticComponents.removeAt(e.key);
+                    }),
+                  ),
+                )
+                .toList(),
+            TextButton.icon(
+              onPressed: () => setState(() {
+                staticComponents.add(StaticComponent(mm: '', qty: 1));
+              }),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Static Component'),
             ),
             const SizedBox(height: 8),
-            TextField(
-              controller: dynamics,
-              decoration:
-                  const InputDecoration(labelText: 'Dynamic Components (JSON)'),
-              maxLines: 6,
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: _openRuleWizard,
-              child: const Text('Rule Wizard'),
+            const Text('Dynamic Components'),
+            const SizedBox(height: 4),
+            ...dynamicComponents
+                .asMap()
+                .entries
+                .map(
+                  (e) => _DynamicEditor(
+                    comp: e.value,
+                    onNameChanged: (name) => setState(() {
+                      final old = dynamicComponents[e.key];
+                      dynamicComponents[e.key] = DynamicComponentDef(
+                        name: name,
+                        selectionStrategy: old.selectionStrategy,
+                        rules: old.rules,
+                      );
+                    }),
+                    onEditRules: () => _openRuleWizard(e.key),
+                    onDelete: () => setState(() {
+                      dynamicComponents.removeAt(e.key);
+                    }),
+                  ),
+                )
+                .toList(),
+            TextButton.icon(
+              onPressed: () => setState(() {
+                dynamicComponents.add(DynamicComponentDef(name: '', rules: []));
+              }),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Dynamic Component'),
             ),
           ],
         ),
@@ -228,4 +249,280 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     );
   }
 }
+
+class _ParameterEditor extends StatefulWidget {
+  final ParameterDef def;
+  final ValueChanged<ParameterDef> onChanged;
+  final VoidCallback onDelete;
+
+  const _ParameterEditor(
+      {required this.def, required this.onChanged, required this.onDelete});
+
+  @override
+  State<_ParameterEditor> createState() => _ParameterEditorState();
+}
+
+class _ParameterEditorState extends State<_ParameterEditor> {
+  late TextEditingController key;
+  late TextEditingController unit;
+  late TextEditingController allowed;
+  late bool requiredField;
+  late ParamType type;
+
+  @override
+  void initState() {
+    super.initState();
+    key = TextEditingController(text: widget.def.key);
+    unit = TextEditingController(text: widget.def.unit ?? '');
+    allowed = TextEditingController(text: widget.def.allowedValues.join(','));
+    requiredField = widget.def.required;
+    type = widget.def.type;
+  }
+
+  void _notify() {
+    widget.onChanged(
+      ParameterDef(
+        key: key.text.trim(),
+        type: type,
+        unit: unit.text.trim().isEmpty ? null : unit.text.trim(),
+        allowedValues: allowed.text
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList(),
+        required: requiredField,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: key,
+                    decoration: const InputDecoration(labelText: 'Key'),
+                    onChanged: (_) => _notify(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                DropdownButton<ParamType>(
+                  value: type,
+                  onChanged: (v) {
+                    if (v != null) {
+                      setState(() {
+                        type = v;
+                      });
+                      _notify();
+                    }
+                  },
+                  items: ParamType.values
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(paramTypeToString(e)),
+                        ),
+                      )
+                      .toList(),
+                ),
+                IconButton(
+                  onPressed: widget.onDelete,
+                  icon: const Icon(Icons.delete),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: unit,
+                    decoration: const InputDecoration(labelText: 'Unit'),
+                    onChanged: (_) => _notify(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: allowed,
+                    decoration: const InputDecoration(
+                      labelText: 'Allowed Values (comma)',
+                    ),
+                    onChanged: (_) => _notify(),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                Checkbox(
+                  value: requiredField,
+                  onChanged: (v) {
+                    setState(() {
+                      requiredField = v ?? false;
+                    });
+                    _notify();
+                  },
+                ),
+                const Text('Required'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    key.dispose();
+    unit.dispose();
+    allowed.dispose();
+    super.dispose();
+  }
+}
+
+class _StaticEditor extends StatefulWidget {
+  final StaticComponent comp;
+  final ValueChanged<StaticComponent> onChanged;
+  final VoidCallback onDelete;
+
+  const _StaticEditor(
+      {required this.comp, required this.onChanged, required this.onDelete});
+
+  @override
+  State<_StaticEditor> createState() => _StaticEditorState();
+}
+
+class _StaticEditorState extends State<_StaticEditor> {
+  late TextEditingController mm;
+  late TextEditingController qty;
+
+  @override
+  void initState() {
+    super.initState();
+    mm = TextEditingController(text: widget.comp.mm);
+    qty = TextEditingController(text: widget.comp.qty.toString());
+  }
+
+  void _notify() {
+    widget.onChanged(
+      StaticComponent(
+        mm: mm.text.trim(),
+        qty: int.tryParse(qty.text.trim()) ?? 0,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: mm,
+                decoration: const InputDecoration(labelText: 'MM'),
+                onChanged: (_) => _notify(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: qty,
+                decoration: const InputDecoration(labelText: 'Qty'),
+                keyboardType: TextInputType.number,
+                onChanged: (_) => _notify(),
+              ),
+            ),
+            IconButton(
+              onPressed: widget.onDelete,
+              icon: const Icon(Icons.delete),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    mm.dispose();
+    qty.dispose();
+    super.dispose();
+  }
+}
+
+class _DynamicEditor extends StatefulWidget {
+  final DynamicComponentDef comp;
+  final ValueChanged<String> onNameChanged;
+  final VoidCallback onEditRules;
+  final VoidCallback onDelete;
+
+  const _DynamicEditor({
+    required this.comp,
+    required this.onNameChanged,
+    required this.onEditRules,
+    required this.onDelete,
+  });
+
+  @override
+  State<_DynamicEditor> createState() => _DynamicEditorState();
+}
+
+class _DynamicEditorState extends State<_DynamicEditor> {
+  late TextEditingController name;
+
+  @override
+  void initState() {
+    super.initState();
+    name = TextEditingController(text: widget.comp.name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: name,
+                decoration: const InputDecoration(labelText: 'Name'),
+                onChanged: widget.onNameChanged,
+              ),
+            ),
+            TextButton(
+              onPressed: widget.onEditRules,
+              child: const Text('Edit Rules'),
+            ),
+            IconButton(
+              onPressed: widget.onDelete,
+              icon: const Icon(Icons.delete),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    super.dispose();
+  }
+}
+
 
