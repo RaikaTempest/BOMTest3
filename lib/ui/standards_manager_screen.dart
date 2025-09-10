@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../core/models.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
+import 'rule_wizard.dart';
 
 class StandardsManagerScreen extends StatefulWidget {
   const StandardsManagerScreen({super.key});
@@ -83,6 +84,35 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   late final TextEditingController params;
   late final TextEditingController statics;
   late final TextEditingController dynamics;
+
+  Future<void> _openRuleWizard() async {
+    try {
+      final dynList = (jsonDecode(dynamics.text) as List)
+          .map(
+            (e) => DynamicComponentDef.fromJson(
+              (e as Map).cast<String, dynamic>(),
+            ),
+          )
+          .toList();
+      if (dynList.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No dynamic components to edit')),
+        );
+        return;
+      }
+      final comp = dynList.first;
+      final updated = await Navigator.of(context).push<DynamicComponentDef>(
+        MaterialPageRoute(builder: (_) => RuleWizard(parent: comp)),
+      );
+      if (updated != null) {
+        dynList[0] = updated;
+        dynamics.text = jsonEncode(dynList.map((d) => d.toJson()).toList());
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Edit error: $e')));
+    }
+  }
 
   @override
   void initState() {
@@ -186,6 +216,11 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
               decoration:
                   const InputDecoration(labelText: 'Dynamic Components (JSON)'),
               maxLines: 6,
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _openRuleWizard,
+              child: const Text('Rule Wizard'),
             ),
           ],
         ),
