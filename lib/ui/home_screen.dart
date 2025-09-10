@@ -3,6 +3,7 @@ import '../core/models.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
 import 'new_job_screen.dart';
+import 'standards_manager_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -26,7 +27,7 @@ class HomeScreen extends StatelessWidget {
         body: const TabBarView(
           children: [
             _JobTab(),
-            Center(child: Text('Standards')),
+            StandardsManagerScreen(),
             Center(child: Text('Approvals')),
             Center(child: Text('Aliases')),
           ],
