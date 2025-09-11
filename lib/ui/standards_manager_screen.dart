@@ -87,10 +87,11 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     try {
       final updated = await Navigator.of(context).push<DynamicComponentDef>(
         MaterialPageRoute(
-          builder: (_) => RuleWizard(
-            parent: dynamicComponents[index],
-            parameters: parameters,
-          ),
+          builder:
+              (_) => RuleWizard(
+                parent: dynamicComponents[index],
+                parameters: parameters,
+              ),
         ),
       );
       setState(() {
@@ -100,8 +101,9 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         // ensure UI reflects any parameter changes made inside the wizard
       });
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Edit error: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Edit error: $e')));
     }
   }
 
@@ -136,8 +138,9 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Save error: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Save error: $e')));
     }
   }
 
@@ -175,19 +178,22 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                 .map(
                   (e) => _ParameterEditor(
                     def: e.value,
-                    onChanged: (p) => setState(() {
-                      parameters[e.key] = p;
-                    }),
-                    onDelete: () => setState(() {
-                      parameters.removeAt(e.key);
-                    }),
+                    onChanged:
+                        (p) => setState(() {
+                          parameters[e.key] = p;
+                        }),
+                    onDelete:
+                        () => setState(() {
+                          parameters.removeAt(e.key);
+                        }),
                   ),
                 )
                 .toList(),
             TextButton.icon(
-              onPressed: () => setState(() {
-                parameters.add(ParameterDef(key: '', type: ParamType.text));
-              }),
+              onPressed:
+                  () => setState(() {
+                    parameters.add(ParameterDef(key: '', type: ParamType.text));
+                  }),
               icon: const Icon(Icons.add),
               label: const Text('Add Parameter'),
             ),
@@ -200,19 +206,22 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                 .map(
                   (e) => _StaticEditor(
                     comp: e.value,
-                    onChanged: (c) => setState(() {
-                      staticComponents[e.key] = c;
-                    }),
-                    onDelete: () => setState(() {
-                      staticComponents.removeAt(e.key);
-                    }),
+                    onChanged:
+                        (c) => setState(() {
+                          staticComponents[e.key] = c;
+                        }),
+                    onDelete:
+                        () => setState(() {
+                          staticComponents.removeAt(e.key);
+                        }),
                   ),
                 )
                 .toList(),
             TextButton.icon(
-              onPressed: () => setState(() {
-                staticComponents.add(StaticComponent(mm: '', qty: 1));
-              }),
+              onPressed:
+                  () => setState(() {
+                    staticComponents.add(StaticComponent(mm: '', qty: 1));
+                  }),
               icon: const Icon(Icons.add),
               label: const Text('Add Static Component'),
             ),
@@ -225,30 +234,39 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                 .map(
                   (e) => _DynamicEditor(
                     comp: e.value,
-                    onNameChanged: (name) => setState(() {
-                      final old = dynamicComponents[e.key];
-                      dynamicComponents[e.key] = DynamicComponentDef(
-                        name: name,
-                        selectionStrategy: old.selectionStrategy,
-                        rules: old.rules,
-                      );
-                    }),
+                    onNameChanged:
+                        (name) => setState(() {
+                          final old = dynamicComponents[e.key];
+                          dynamicComponents[e.key] = DynamicComponentDef(
+                            name: name,
+                            selectionStrategy: old.selectionStrategy,
+                            rules: old.rules,
+                          );
+                        }),
                     onEditRules: () => _openRuleWizard(e.key),
-                    onDelete: () => setState(() {
-                      dynamicComponents.removeAt(e.key);
-                    }),
+                    onDelete:
+                        () => setState(() {
+                          dynamicComponents.removeAt(e.key);
+                        }),
                   ),
                 )
                 .toList(),
             TextButton.icon(
-              onPressed: () => setState(() {
-                dynamicComponents.add(DynamicComponentDef(name: '', rules: []));
-              }),
+              onPressed:
+                  () => setState(() {
+                    dynamicComponents.add(
+                      DynamicComponentDef(name: '', rules: []),
+                    );
+                  }),
               icon: const Icon(Icons.add),
               label: const Text('Add Dynamic Component'),
             ),
           ],
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _save,
+        child: const Icon(Icons.save),
       ),
     );
   }
@@ -259,8 +277,11 @@ class _ParameterEditor extends StatefulWidget {
   final ValueChanged<ParameterDef> onChanged;
   final VoidCallback onDelete;
 
-  const _ParameterEditor(
-      {required this.def, required this.onChanged, required this.onDelete});
+  const _ParameterEditor({
+    required this.def,
+    required this.onChanged,
+    required this.onDelete,
+  });
 
   @override
   State<_ParameterEditor> createState() => _ParameterEditorState();
@@ -289,11 +310,12 @@ class _ParameterEditorState extends State<_ParameterEditor> {
         key: key.text.trim(),
         type: type,
         unit: unit.text.trim().isEmpty ? null : unit.text.trim(),
-        allowedValues: allowed.text
-            .split(',')
-            .map((e) => e.trim())
-            .where((e) => e.isNotEmpty)
-            .toList(),
+        allowedValues:
+            allowed.text
+                .split(',')
+                .map((e) => e.trim())
+                .where((e) => e.isNotEmpty)
+                .toList(),
         required: requiredField,
       ),
     );
@@ -327,14 +349,15 @@ class _ParameterEditorState extends State<_ParameterEditor> {
                       _notify();
                     }
                   },
-                  items: ParamType.values
-                      .map(
-                        (e) => DropdownMenuItem(
-                          value: e,
-                          child: Text(paramTypeToString(e)),
-                        ),
-                      )
-                      .toList(),
+                  items:
+                      ParamType.values
+                          .map(
+                            (e) => DropdownMenuItem(
+                              value: e,
+                              child: Text(paramTypeToString(e)),
+                            ),
+                          )
+                          .toList(),
                 ),
                 IconButton(
                   onPressed: widget.onDelete,
@@ -398,8 +421,11 @@ class _StaticEditor extends StatefulWidget {
   final ValueChanged<StaticComponent> onChanged;
   final VoidCallback onDelete;
 
-  const _StaticEditor(
-      {required this.comp, required this.onChanged, required this.onDelete});
+  const _StaticEditor({
+    required this.comp,
+    required this.onChanged,
+    required this.onDelete,
+  });
 
   @override
   State<_StaticEditor> createState() => _StaticEditorState();
@@ -528,5 +554,3 @@ class _DynamicEditorState extends State<_DynamicEditor> {
     super.dispose();
   }
 }
-
-
