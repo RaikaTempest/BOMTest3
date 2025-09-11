@@ -5,8 +5,14 @@ import '../core/models.dart';
 class RuleWizard extends StatefulWidget {
   final DynamicComponentDef parent;
   final RuleDef? existing;
+  final List<ParameterDef> parameters;
 
-  const RuleWizard({super.key, required this.parent, this.existing});
+  const RuleWizard({
+    super.key,
+    required this.parent,
+    this.existing,
+    required this.parameters,
+  });
 
   @override
   State<RuleWizard> createState() => _RuleWizardState();
@@ -143,6 +149,110 @@ class _RuleWizardState extends State<RuleWizard> {
     });
   }
 
+  Future<void> _addParameterDialog({String initialKey = ''}) async {
+    final keyCtrl = TextEditingController(text: initialKey);
+    final unitCtrl = TextEditingController();
+    final allowedCtrl = TextEditingController();
+    bool requiredField = true;
+    ParamType type = ParamType.text;
+
+    final result = await showDialog<ParameterDef>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('New Variable'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: keyCtrl,
+                      decoration: const InputDecoration(labelText: 'Key'),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButton<ParamType>(
+                      value: type,
+                      onChanged: (v) {
+                        if (v != null) setState(() => type = v);
+                      },
+                      items: ParamType.values
+                          .map((e) => DropdownMenuItem(
+                                value: e,
+                                child: Text(paramTypeToString(e)),
+                              ))
+                          .toList(),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: unitCtrl,
+                      decoration: const InputDecoration(labelText: 'Unit'),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: allowedCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Allowed Values (comma)',
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: requiredField,
+                          onChanged: (v) =>
+                              setState(() => requiredField = v ?? false),
+                        ),
+                        const Text('Required'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(
+                      context,
+                      ParameterDef(
+                        key: keyCtrl.text.trim(),
+                        type: type,
+                        unit: unitCtrl.text.trim().isEmpty
+                            ? null
+                            : unitCtrl.text.trim(),
+                        allowedValues: allowedCtrl.text
+                            .split(',')
+                            .map((e) => e.trim())
+                            .where((e) => e.isNotEmpty)
+                            .toList(),
+                        required: requiredField,
+                      ),
+                    );
+                  },
+                  child: const Text('Add'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    keyCtrl.dispose();
+    unitCtrl.dispose();
+    allowedCtrl.dispose();
+
+    if (result != null) {
+      setState(() {
+        widget.parameters.add(result);
+      });
+    }
+  }
+
   Future<void> _save() async {
     try {
       final conds = _conditions.map((e) => e.toJsonLogic()).toList();
@@ -185,10 +295,35 @@ class _RuleWizardState extends State<RuleWizard> {
         children: [
           Expanded(
             flex: 3,
-            child: TextField(
-              controller: f.param,
-              decoration: const InputDecoration(labelText: 'Param'),
+            child: Autocomplete<String>(
+              optionsBuilder: (TextEditingValue textEditingValue) {
+                return widget.parameters
+                    .map((e) => e.key)
+                    .where((k) => k
+                        .toLowerCase()
+                        .contains(textEditingValue.text.toLowerCase()));
+              },
+              initialValue: TextEditingValue(text: f.param.text),
+              fieldViewBuilder:
+                  (context, controller, focusNode, onFieldSubmitted) {
+                controller.text = f.param.text;
+                return TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  decoration: const InputDecoration(labelText: 'Param'),
+                  onChanged: (v) => f.param.text = v,
+                );
+              },
+              onSelected: (selection) {
+                f.param.text = selection;
+              },
             ),
+          ),
+          IconButton(
+            onPressed: () =>
+                _addParameterDialog(initialKey: f.param.text.trim()),
+            icon: const Icon(Icons.add),
+            tooltip: 'Add variable',
           ),
           const SizedBox(width: 8),
           DropdownButton<String>(
@@ -315,6 +450,20 @@ class _RuleWizardState extends State<RuleWizard> {
               controller: priority,
               decoration: const InputDecoration(labelText: 'Priority'),
               keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 8),
+            const Text('Variables'),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              children: widget.parameters
+                  .map((e) => Chip(label: Text(e.key)))
+                  .toList(),
+            ),
+            TextButton.icon(
+              onPressed: _addParameterDialog,
+              icon: const Icon(Icons.add),
+              label: const Text('Add Variable'),
             ),
             const SizedBox(height: 8),
             const Text('Conditions'),
