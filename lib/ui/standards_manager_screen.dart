@@ -152,7 +152,11 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         actions: [
           TextButton(
             onPressed: _save,
-            child: const Text('Save', style: TextStyle(color: Colors.white)),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).colorScheme.secondary,
+            ),
+            child: const Text('Save'),
           ),
         ],
       ),
