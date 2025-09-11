@@ -87,14 +87,18 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     try {
       final updated = await Navigator.of(context).push<DynamicComponentDef>(
         MaterialPageRoute(
-          builder: (_) => RuleWizard(parent: dynamicComponents[index]),
+          builder: (_) => RuleWizard(
+            parent: dynamicComponents[index],
+            parameters: parameters,
+          ),
         ),
       );
-      if (updated != null) {
-        setState(() {
+      setState(() {
+        if (updated != null) {
           dynamicComponents[index] = updated;
-        });
-      }
+        }
+        // ensure UI reflects any parameter changes made inside the wizard
+      });
     } catch (e) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Edit error: $e')));
