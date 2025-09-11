@@ -211,4 +211,37 @@ class WorkLocation {
     Map<String, dynamic>? variables,
   })  : standards = standards ?? <String>{},
         variables = variables ?? <String, dynamic>{};
+
+  factory WorkLocation.fromJson(Map<String, dynamic> j) => WorkLocation(
+        barcode: j['barcode'] as String? ?? '',
+        standards:
+            (j['standards'] as List?)?.map((e) => e.toString()).toSet() ?? <String>{},
+        variables: (j['variables'] as Map?)?.cast<String, dynamic>() ?? {},
+      );
+
+  Map<String, dynamic> toJson() => {
+        'barcode': barcode,
+        'standards': standards.toList(),
+        'variables': variables,
+      };
+}
+
+class Project {
+  final String name;
+  final List<WorkLocation> locations;
+  Project({required this.name, required this.locations});
+
+  factory Project.fromJson(Map<String, dynamic> j) => Project(
+        name: j['name'] as String? ?? '',
+        locations: (j['locations'] as List?)
+                ?.map((e) => WorkLocation.fromJson(
+                    (e as Map).cast<String, dynamic>()))
+                .toList() ??
+            [],
+      );
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'locations': locations.map((e) => e.toJson()).toList(),
+      };
 }

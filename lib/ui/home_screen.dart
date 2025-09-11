@@ -4,6 +4,7 @@ import '../data/repo.dart';
 import '../data/repo_factory.dart';
 import 'project_screen.dart';
 import 'standards_manager_screen.dart';
+import '../data/project_repo.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -108,22 +109,65 @@ class _JobTabState extends State<_JobTab> {
           return Center(child: Text('Load error: ${snap.error}'));
         }
         return Center(
-          child: ElevatedButton(
-            onPressed: () async {
-              final count = await _promptLocationCount(context);
-              if (count != null) {
-                // ignore: use_build_context_synchronously
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ProjectScreen(initialCount: count),
-                  ),
-                );
-              }
-            },
-            child: const Text('New project'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ElevatedButton(
+                onPressed: () async {
+                  final count = await _promptLocationCount(context);
+                  if (count != null) {
+                    // ignore: use_build_context_synchronously
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ProjectScreen(initialCount: count),
+                      ),
+                    );
+                  }
+                },
+                child: const Text('New project'),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadProject,
+                child: const Text('Load project'),
+              ),
+            ],
           ),
         );
       },
+    );
+  }
+
+  Future<void> _loadProject() async {
+    final repo = LocalProjectRepo();
+    final names = await repo.listProjects();
+    if (names.isEmpty) return;
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: const Text('Select project'),
+        children: names
+            .map(
+              (n) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, n),
+                child: Text(n),
+              ),
+            )
+            .toList(),
+      ),
+    );
+    if (name == null) return;
+    final proj = await repo.loadProject(name);
+    if (proj == null) return;
+    // ignore: use_build_context_synchronously
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProjectScreen(
+          initialCount: 0,
+          loaded: proj.locations,
+          name: proj.name,
+        ),
+      ),
     );
   }
 }
