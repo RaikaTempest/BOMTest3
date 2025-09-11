@@ -1,19 +1,8 @@
 import 'package:flutter/material.dart';
 import '../core/models.dart';
 import '../data/repo_factory.dart';
+import '../core/bom_exporter.dart';
 import 'standards_manager_screen.dart';
-
-class WorkLocation {
-  String barcode;
-  Set<String> standards;
-  Map<String, dynamic> variables;
-  WorkLocation({
-    this.barcode = '',
-    Set<String>? standards,
-    Map<String, dynamic>? variables,
-  })  : standards = standards ?? <String>{},
-        variables = variables ?? <String, dynamic>{};
-}
 
 class ProjectScreen extends StatefulWidget {
   final int initialCount;
@@ -87,7 +76,15 @@ class _ProjectScreenState extends State<ProjectScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Project')),
+      appBar: AppBar(
+        title: const Text('Project'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.download),
+            onPressed: _exportCsv,
+          ),
+        ],
+      ),
       body: ListView.builder(
         itemCount: locations.length,
         itemBuilder: (context, index) {
@@ -116,6 +113,28 @@ class _ProjectScreenState extends State<ProjectScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: _addLocation,
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Future<void> _exportCsv() async {
+    final repo = createRepo();
+    final standards = await repo.listStandards();
+    final exporter = BomExporter();
+    final csv = exporter.buildCsv(locations, standards);
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('BOM CSV'),
+        content: SingleChildScrollView(
+          child: SelectableText(csv),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }

@@ -200,3 +200,15 @@ class CacheEntry {
   final DateTime createdAt;
   CacheEntry({required this.standardId, required this.inputs, required this.bom, required this.status, required this.createdAt});
 }
+
+class WorkLocation {
+  String barcode;
+  Set<String> standards;
+  Map<String, dynamic> variables;
+  WorkLocation({
+    this.barcode = '',
+    Set<String>? standards,
+    Map<String, dynamic>? variables,
+  })  : standards = standards ?? <String>{},
+        variables = variables ?? <String, dynamic>{};
+}
