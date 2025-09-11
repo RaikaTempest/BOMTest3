@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import '../core/models.dart';
 import '../data/repo_factory.dart';
+import '../data/project_repo.dart';
 import '../core/bom_exporter.dart';
 import 'standards_manager_screen.dart';
 
 class ProjectScreen extends StatefulWidget {
   final int initialCount;
+  final List<WorkLocation>? loaded;
+  final String? name;
   const ProjectScreen({
     super.key,
     required this.initialCount,
+    this.loaded,
+    this.name,
   });
 
   @override
@@ -17,11 +22,14 @@ class ProjectScreen extends StatefulWidget {
 
 class _ProjectScreenState extends State<ProjectScreen> {
   late List<WorkLocation> locations;
+  String? _name;
 
   @override
   void initState() {
     super.initState();
-    locations = List.generate(widget.initialCount, (_) => WorkLocation());
+    locations = widget.loaded ??
+        List.generate(widget.initialCount, (_) => WorkLocation());
+    _name = widget.name;
   }
 
   Future<void> _addLocation() async {
@@ -77,8 +85,12 @@ class _ProjectScreenState extends State<ProjectScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Project'),
+        title: Text(_name ?? 'Project'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.save),
+            onPressed: _saveProject,
+          ),
           IconButton(
             icon: const Icon(Icons.download),
             onPressed: _exportCsv,
@@ -137,6 +149,40 @@ class _ProjectScreenState extends State<ProjectScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _saveProject() async {
+    final repo = LocalProjectRepo();
+    if (_name == null || _name!.isEmpty) {
+      final controller = TextEditingController();
+      final name = await showDialog<String>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Project name'),
+          content: TextField(controller: controller),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      if (name == null || name.isEmpty) return;
+      _name = name;
+    }
+    final proj = Project(name: _name!, locations: locations);
+    await repo.saveProject(proj);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Project saved')),
+      );
+    }
+    setState(() {});
   }
 }
 
