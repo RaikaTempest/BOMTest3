@@ -177,12 +177,15 @@ class _RuleWizardState extends State<RuleWizard> {
                       onChanged: (v) {
                         if (v != null) setState(() => type = v);
                       },
-                      items: ParamType.values
-                          .map((e) => DropdownMenuItem(
-                                value: e,
-                                child: Text(paramTypeToString(e)),
-                              ))
-                          .toList(),
+                      items:
+                          ParamType.values
+                              .map(
+                                (e) => DropdownMenuItem(
+                                  value: e,
+                                  child: Text(paramTypeToString(e)),
+                                ),
+                              )
+                              .toList(),
                     ),
                     const SizedBox(height: 8),
                     TextField(
@@ -200,8 +203,8 @@ class _RuleWizardState extends State<RuleWizard> {
                       children: [
                         Checkbox(
                           value: requiredField,
-                          onChanged: (v) =>
-                              setState(() => requiredField = v ?? false),
+                          onChanged:
+                              (v) => setState(() => requiredField = v ?? false),
                         ),
                         const Text('Required'),
                       ],
@@ -221,14 +224,16 @@ class _RuleWizardState extends State<RuleWizard> {
                       ParameterDef(
                         key: keyCtrl.text.trim(),
                         type: type,
-                        unit: unitCtrl.text.trim().isEmpty
-                            ? null
-                            : unitCtrl.text.trim(),
-                        allowedValues: allowedCtrl.text
-                            .split(',')
-                            .map((e) => e.trim())
-                            .where((e) => e.isNotEmpty)
-                            .toList(),
+                        unit:
+                            unitCtrl.text.trim().isEmpty
+                                ? null
+                                : unitCtrl.text.trim(),
+                        allowedValues:
+                            allowedCtrl.text
+                                .split(',')
+                                .map((e) => e.trim())
+                                .where((e) => e.isNotEmpty)
+                                .toList(),
                         required: requiredField,
                       ),
                     );
@@ -299,13 +304,19 @@ class _RuleWizardState extends State<RuleWizard> {
               optionsBuilder: (TextEditingValue textEditingValue) {
                 return widget.parameters
                     .map((e) => e.key)
-                    .where((k) => k
-                        .toLowerCase()
-                        .contains(textEditingValue.text.toLowerCase()));
+                    .where(
+                      (k) => k.toLowerCase().contains(
+                        textEditingValue.text.toLowerCase(),
+                      ),
+                    );
               },
               initialValue: TextEditingValue(text: f.param.text),
-              fieldViewBuilder:
-                  (context, controller, focusNode, onFieldSubmitted) {
+              fieldViewBuilder: (
+                context,
+                controller,
+                focusNode,
+                onFieldSubmitted,
+              ) {
                 controller.text = f.param.text;
                 return TextField(
                   controller: controller,
@@ -320,8 +331,8 @@ class _RuleWizardState extends State<RuleWizard> {
             ),
           ),
           IconButton(
-            onPressed: () =>
-                _addParameterDialog(initialKey: f.param.text.trim()),
+            onPressed:
+                () => _addParameterDialog(initialKey: f.param.text.trim()),
             icon: const Icon(Icons.add),
             tooltip: 'Add variable',
           ),
@@ -456,9 +467,10 @@ class _RuleWizardState extends State<RuleWizard> {
             const SizedBox(height: 4),
             Wrap(
               spacing: 8,
-              children: widget.parameters
-                  .map((e) => Chip(label: Text(e.key)))
-                  .toList(),
+              children:
+                  widget.parameters
+                      .map((e) => Chip(label: Text(e.key)))
+                      .toList(),
             ),
             TextButton.icon(
               onPressed: _addParameterDialog,
@@ -493,6 +505,10 @@ class _RuleWizardState extends State<RuleWizard> {
             ),
           ],
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _save,
+        child: const Icon(Icons.save),
       ),
     );
   }
