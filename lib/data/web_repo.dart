@@ -4,10 +4,10 @@ import '../core/models.dart';
 import 'repo.dart';
 
 class WebStandardsRepo implements StandardsRepo {
-  static const _kStandards = 'bom_standards';
-  static const _kAliases   = 'bom_aliases';
-  static const _kPending   = 'bom_cache_pending';
-  static const _kApproved  = 'bom_cache_approved';
+  static const _kStandards   = 'bom_standards';
+  static const _kParameters  = 'bom_parameters';
+  static const _kPending     = 'bom_cache_pending';
+  static const _kApproved    = 'bom_cache_approved';
 
   Map<String, dynamic> _getMap(String key) {
     final txt = html.window.localStorage[key];
@@ -32,7 +32,7 @@ class WebStandardsRepo implements StandardsRepo {
     for (final e in m.entries) {
       out.add(StandardDef.fromJson((e.value as Map).cast<String, dynamic>()));
     }
-    out.sort((a,b)=>a.code.compareTo(b.code));
+    out.sort((a, b) => a.code.compareTo(b.code));
     return out;
   }
 
@@ -51,14 +51,28 @@ class WebStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<Map<String, String>> loadAliases() async {
-    final m = _getMap(_kAliases);
-    return m.map((k,v)=>MapEntry(k, v.toString()));
+  Future<List<ParameterDef>> loadGlobalParameters() async {
+    final raw = _getMap(_kParameters);
+    final list = <ParameterDef>[];
+    final values = raw['items'];
+    if (values is List) {
+      for (final entry in values) {
+        if (entry is Map) {
+          list.add(ParameterDef.fromJson(entry.cast<String, dynamic>()));
+        }
+      }
+    }
+    return list;
   }
 
   @override
-  Future<void> saveAliases(Map<String, String> aliases) async {
-    _setMap(_kAliases, aliases);
+  Future<void> saveGlobalParameters(List<ParameterDef> parameters) async {
+    _setMap(
+      _kParameters,
+      {
+        'items': parameters.map((e) => e.toJson()).toList(),
+      },
+    );
   }
 
   @override
@@ -80,7 +94,7 @@ class WebStandardsRepo implements StandardsRepo {
   @override
   Future<Map<String, Map<String, dynamic>>> listPendingCache() async {
     final p = _getMap(_kPending);
-    return p.map((k,v)=>MapEntry(k, (v as Map).cast<String, dynamic>()));
+    return p.map((k, v) => MapEntry(k, (v as Map).cast<String, dynamic>()));
   }
 
   @override
