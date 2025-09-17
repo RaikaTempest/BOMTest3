@@ -153,6 +153,7 @@ class StandardDef {
   final List<ParameterDef> parameters;
   final List<StaticComponent> staticComponents;
   final List<DynamicComponentDef> dynamicComponents;
+  final String? applicationId; // originating StandardApplication
 
   StandardDef({
     required this.code,
@@ -162,6 +163,7 @@ class StandardDef {
     this.parameters = const [],
     this.staticComponents = const [],
     this.dynamicComponents = const [],
+    this.applicationId,
   });
 
   factory StandardDef.fromJson(Map<String, dynamic> j) => StandardDef(
@@ -172,6 +174,7 @@ class StandardDef {
         parameters: (j['parameters'] as List?)?.map((e) => ParameterDef.fromJson((e as Map).cast<String, dynamic>())).toList() ?? const [],
         staticComponents: (j['static_components'] as List?)?.map((e) => StaticComponent.fromJson((e as Map).cast<String, dynamic>())).toList() ?? const [],
         dynamicComponents: (j['dynamic_components'] as List?)?.map((e) => DynamicComponentDef.fromJson((e as Map).cast<String, dynamic>())).toList() ?? const [],
+        applicationId: j['application_id'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -182,6 +185,47 @@ class StandardDef {
         'parameters': parameters.map((e) => e.toJson()).toList(),
         'static_components': staticComponents.map((e) => e.toJson()).toList(),
         'dynamic_components': dynamicComponents.map((e) => e.toJson()).toList(),
+        if (applicationId != null) 'application_id': applicationId,
+      };
+}
+
+class StandardApplication {
+  final String id;
+  final String createdBy;
+  final String content;
+  final String status; // pending/approved/rejected
+  final DateTime createdAt;
+  final DateTime? approvedAt;
+  final String? standardCode;
+
+  StandardApplication({
+    required this.id,
+    required this.createdBy,
+    required this.content,
+    this.status = 'pending',
+    required this.createdAt,
+    this.approvedAt,
+    this.standardCode,
+  });
+
+  factory StandardApplication.fromJson(Map<String, dynamic> j) => StandardApplication(
+        id: j['id'] as String,
+        createdBy: j['created_by'] as String,
+        content: j['content'] as String,
+        status: j['status'] as String? ?? 'pending',
+        createdAt: DateTime.parse(j['created_at'] as String),
+        approvedAt: j['approved_at'] != null ? DateTime.parse(j['approved_at'] as String) : null,
+        standardCode: j['standard_code'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'created_by': createdBy,
+        'content': content,
+        'status': status,
+        'created_at': createdAt.toIso8601String(),
+        if (approvedAt != null) 'approved_at': approvedAt!.toIso8601String(),
+        'standard_code': standardCode,
       };
 }
 
