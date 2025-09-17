@@ -15,7 +15,18 @@ class GlobalParametersScreen extends StatefulWidget {
 class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
   late final StandardsRepo repo;
   List<ParameterDef> parameters = [];
+  final List<String> _parameterIds = [];
+  int _nextParameterId = 0;
   bool _loading = true;
+
+  String _createParameterId() => 'global_param_${_nextParameterId++}';
+
+  void _resetParameterIds() {
+    _nextParameterId = 0;
+    _parameterIds
+      ..clear()
+      ..addAll(List.generate(parameters.length, (_) => _createParameterId()));
+  }
 
   @override
   void initState() {
@@ -29,11 +40,13 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
       final list = await repo.loadGlobalParameters();
       setState(() {
         parameters = list;
+        _resetParameterIds();
         _loading = false;
       });
     } catch (_) {
       setState(() {
         parameters = [];
+        _resetParameterIds();
         _loading = false;
       });
     }
@@ -48,12 +61,14 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
   void _removeParameter(int index) {
     setState(() {
       parameters.removeAt(index);
+      _parameterIds.removeAt(index);
     });
   }
 
   void _addParameter() {
     setState(() {
       parameters.add(ParameterDef(key: '', type: ParamType.text));
+      _parameterIds.add(_createParameterId());
     });
   }
 
@@ -90,6 +105,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
       await repo.saveGlobalParameters(cleaned);
       setState(() {
         parameters = List<ParameterDef>.from(cleaned);
+        _resetParameterIds();
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -132,7 +148,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
                           .entries
                           .map(
                             (e) => ParameterEditor(
-                              key: ValueKey('global_param_${e.key}_${parameters[e.key].key}'),
+                              key: ValueKey(_parameterIds[e.key]),
                               def: e.value,
                               onChanged: (p) => _onParameterChanged(e.key, p),
                               onDelete: () => _removeParameter(e.key),
