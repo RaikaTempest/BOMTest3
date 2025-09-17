@@ -4,6 +4,7 @@ import '../data/repo.dart';
 import '../data/repo_factory.dart';
 import 'project_screen.dart';
 import 'standards_manager_screen.dart';
+import 'global_parameters_screen.dart';
 import '../data/project_repo.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -21,16 +22,16 @@ class HomeScreen extends StatelessWidget {
               Tab(text: 'Job'),
               Tab(text: 'Standards'),
               Tab(text: 'Approvals'),
-              Tab(text: 'Aliases'),
+              Tab(text: 'Parameters'),
             ],
           ),
         ),
-        body: const TabBarView(
+        body: TabBarView(
           children: [
-            _JobTab(),
-            StandardsManagerScreen(),
-            Center(child: Text('Approvals')),
-            Center(child: Text('Aliases')),
+            const _JobTab(),
+            const StandardsManagerScreen(),
+            const Center(child: Text('Approvals')),
+            const GlobalParametersScreen(),
           ],
         ),
       ),

@@ -5,8 +5,8 @@ abstract class StandardsRepo {
   Future<void> saveStandard(StandardDef std);
   Future<void> deleteStandard(String code);
 
-  Future<Map<String, String>> loadAliases();
-  Future<void> saveAliases(Map<String, String> aliases);
+  Future<List<ParameterDef>> loadGlobalParameters();
+  Future<void> saveGlobalParameters(List<ParameterDef> parameters);
 
   Future<void> saveCacheEntry(String key, Map<String, dynamic> entryJson);
   Future<Map<String, dynamic>?> getCacheEntry(String key);

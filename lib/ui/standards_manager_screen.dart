@@ -4,6 +4,7 @@ import '../core/models.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
 import 'rule_wizard.dart';
+import 'widgets/parameter_editor.dart';
 
 class StandardsManagerScreen extends StatefulWidget {
   const StandardsManagerScreen({super.key});
@@ -82,6 +83,107 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   List<ParameterDef> parameters = [];
   List<StaticComponent> staticComponents = [];
   List<DynamicComponentDef> dynamicComponents = [];
+  List<ParameterDef> globalParameters = [];
+  bool _loadingGlobalParameters = true;
+
+  void _combineGlobalAndCurrent() {
+    final map = <String, ParameterDef>{};
+    for (final p in globalParameters) {
+      final key = p.key.trim();
+      if (key.isEmpty) continue;
+      map[key] = p;
+    }
+    for (final p in parameters) {
+      final key = p.key.trim();
+      if (key.isEmpty) continue;
+      map[key] = p;
+    }
+    globalParameters = map.values.toList()
+      ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+  }
+
+  Future<void> _loadGlobalParameters() async {
+    try {
+      final list = await widget.repo.loadGlobalParameters();
+      if (!mounted) return;
+      setState(() {
+        globalParameters = list;
+        _combineGlobalAndCurrent();
+        _loadingGlobalParameters = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        globalParameters = [];
+        _combineGlobalAndCurrent();
+        _loadingGlobalParameters = false;
+      });
+    }
+  }
+
+  void _addNewParameter() {
+    setState(() {
+      parameters.add(ParameterDef(key: '', type: ParamType.text));
+      _combineGlobalAndCurrent();
+    });
+  }
+
+  Future<void> _addExistingParameter() async {
+    if (_loadingGlobalParameters) return;
+    final existingKeys = parameters.map((e) => e.key).toSet();
+    final options = globalParameters
+        .where((p) => p.key.isNotEmpty && !existingKeys.contains(p.key))
+        .toList()
+      ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+    if (options.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No available global parameters to add.')),
+      );
+      return;
+    }
+    final selected = await showDialog<ParameterDef>(
+      context: context,
+      builder: (context) {
+        return SimpleDialog(
+          title: const Text('Select parameter'),
+          children: [
+            for (final option in options)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, option),
+                child: Text('${option.key} (${paramTypeToString(option.type)})'),
+              ),
+          ],
+        );
+      },
+    );
+    if (selected == null) return;
+    setState(() {
+      parameters.add(_cloneParameter(selected));
+      _combineGlobalAndCurrent();
+    });
+  }
+
+  ParameterDef _cloneParameter(ParameterDef source) => ParameterDef(
+        key: source.key,
+        type: source.type,
+        unit: source.unit,
+        allowedValues: List<String>.from(source.allowedValues),
+        required: source.required,
+      );
+
+  void _onParameterChanged(int index, ParameterDef def) {
+    setState(() {
+      parameters[index] = def;
+      _combineGlobalAndCurrent();
+    });
+  }
+
+  void _removeParameterAt(int index) {
+    setState(() {
+      parameters.removeAt(index);
+      _combineGlobalAndCurrent();
+    });
+  }
 
   Future<void> _openRuleWizard(int index) async {
     try {
@@ -98,7 +200,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         if (updated != null) {
           dynamicComponents[index] = updated;
         }
-        // ensure UI reflects any parameter changes made inside the wizard
+        _combineGlobalAndCurrent();
       });
     } catch (e) {
       ScaffoldMessenger.of(
@@ -116,6 +218,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     parameters = e?.parameters.toList() ?? [];
     staticComponents = e?.staticComponents.toList() ?? [];
     dynamicComponents = e?.dynamicComponents.toList() ?? [];
+    _loadGlobalParameters();
   }
 
   @override
@@ -127,13 +230,54 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
 
   Future<void> _save() async {
     try {
+      final cleaned = <ParameterDef>[];
+      final seenKeys = <String>{};
+      for (final p in parameters) {
+        final key = p.key.trim();
+        if (key.isEmpty) {
+          continue;
+        }
+        if (!seenKeys.add(key)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Duplicate parameter key: $key')),
+          );
+          return;
+        }
+        final unit = p.unit?.trim();
+        cleaned.add(
+          ParameterDef(
+            key: key,
+            type: p.type,
+            unit: unit == null || unit.isEmpty ? null : unit,
+            allowedValues: p.allowedValues
+                .map((e) => e.trim())
+                .where((e) => e.isNotEmpty)
+                .toList(),
+            required: p.required,
+          ),
+        );
+      }
+
       final std = StandardDef(
         code: code.text.trim(),
         name: name.text.trim(),
-        parameters: parameters,
+        parameters: cleaned,
         staticComponents: staticComponents,
         dynamicComponents: dynamicComponents,
       );
+      final global = await widget.repo.loadGlobalParameters();
+      final map = <String, ParameterDef>{};
+      for (final p in global) {
+        final key = p.key.trim();
+        if (key.isEmpty) continue;
+        map[key] = p;
+      }
+      for (final p in cleaned) {
+        map[p.key] = p;
+      }
+      final updatedGlobal = map.values.toList()
+        ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+      await widget.repo.saveGlobalParameters(updatedGlobal);
       await widget.repo.saveStandard(std);
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -176,30 +320,37 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
             const SizedBox(height: 8),
             const Text('Parameters'),
             const SizedBox(height: 4),
+            if (_loadingGlobalParameters)
+              const LinearProgressIndicator(),
+            if (_loadingGlobalParameters)
+              const SizedBox(height: 8),
             ...parameters
                 .asMap()
                 .entries
                 .map(
-                  (e) => _ParameterEditor(
+                  (e) => ParameterEditor(
+                    key: ValueKey('param_${e.key}_${parameters[e.key].key}'),
                     def: e.value,
-                    onChanged:
-                        (p) => setState(() {
-                          parameters[e.key] = p;
-                        }),
-                    onDelete:
-                        () => setState(() {
-                          parameters.removeAt(e.key);
-                        }),
+                    onChanged: (p) => _onParameterChanged(e.key, p),
+                    onDelete: () => _removeParameterAt(e.key),
                   ),
                 )
                 .toList(),
-            TextButton.icon(
-              onPressed:
-                  () => setState(() {
-                    parameters.add(ParameterDef(key: '', type: ParamType.text));
-                  }),
-              icon: const Icon(Icons.add),
-              label: const Text('Add Parameter'),
+            Wrap(
+              spacing: 8,
+              children: [
+                TextButton.icon(
+                  onPressed: _addNewParameter,
+                  icon: const Icon(Icons.add),
+                  label: const Text('New Parameter'),
+                ),
+                TextButton.icon(
+                  onPressed:
+                      _loadingGlobalParameters ? null : _addExistingParameter,
+                  icon: const Icon(Icons.playlist_add),
+                  label: const Text('Add Existing Parameter'),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             const Text('Static Components'),
@@ -273,150 +424,6 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         child: const Icon(Icons.save),
       ),
     );
-  }
-}
-
-class _ParameterEditor extends StatefulWidget {
-  final ParameterDef def;
-  final ValueChanged<ParameterDef> onChanged;
-  final VoidCallback onDelete;
-
-  const _ParameterEditor({
-    required this.def,
-    required this.onChanged,
-    required this.onDelete,
-  });
-
-  @override
-  State<_ParameterEditor> createState() => _ParameterEditorState();
-}
-
-class _ParameterEditorState extends State<_ParameterEditor> {
-  late TextEditingController key;
-  late TextEditingController unit;
-  late TextEditingController allowed;
-  late bool requiredField;
-  late ParamType type;
-
-  @override
-  void initState() {
-    super.initState();
-    key = TextEditingController(text: widget.def.key);
-    unit = TextEditingController(text: widget.def.unit ?? '');
-    allowed = TextEditingController(text: widget.def.allowedValues.join(','));
-    requiredField = widget.def.required;
-    type = widget.def.type;
-  }
-
-  void _notify() {
-    widget.onChanged(
-      ParameterDef(
-        key: key.text.trim(),
-        type: type,
-        unit: unit.text.trim().isEmpty ? null : unit.text.trim(),
-        allowedValues:
-            allowed.text
-                .split(',')
-                .map((e) => e.trim())
-                .where((e) => e.isNotEmpty)
-                .toList(),
-        required: requiredField,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: key,
-                    decoration: const InputDecoration(labelText: 'Key'),
-                    onChanged: (_) => _notify(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                DropdownButton<ParamType>(
-                  value: type,
-                  onChanged: (v) {
-                    if (v != null) {
-                      setState(() {
-                        type = v;
-                      });
-                      _notify();
-                    }
-                  },
-                  items:
-                      ParamType.values
-                          .map(
-                            (e) => DropdownMenuItem(
-                              value: e,
-                              child: Text(paramTypeToString(e)),
-                            ),
-                          )
-                          .toList(),
-                ),
-                IconButton(
-                  onPressed: widget.onDelete,
-                  icon: const Icon(Icons.delete),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: unit,
-                    decoration: const InputDecoration(labelText: 'Unit'),
-                    onChanged: (_) => _notify(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: allowed,
-                    decoration: const InputDecoration(
-                      labelText: 'Allowed Values (comma)',
-                    ),
-                    onChanged: (_) => _notify(),
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                Checkbox(
-                  value: requiredField,
-                  onChanged: (v) {
-                    setState(() {
-                      requiredField = v ?? false;
-                    });
-                    _notify();
-                  },
-                ),
-                const Text('Required'),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    key.dispose();
-    unit.dispose();
-    allowed.dispose();
-    super.dispose();
   }
 }
 

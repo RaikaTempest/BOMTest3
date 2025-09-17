@@ -40,4 +40,19 @@ void main() {
     expect(list.length, 1);
     expect(list.first.code, 'T1');
   });
+
+  test('saves and reloads global parameters', () async {
+    final repo = LocalStandardsRepo();
+    final params = [
+      ParameterDef(key: 'Height', type: ParamType.number, unit: 'ft'),
+      ParameterDef(key: 'Color', type: ParamType.enumType, allowedValues: ['Red', 'Blue']),
+    ];
+
+    await repo.saveGlobalParameters(params);
+    final loaded = await repo.loadGlobalParameters();
+
+    expect(loaded.length, 2);
+    expect(loaded.first.key, params.first.key);
+    expect(loaded[1].allowedValues, ['Red', 'Blue']);
+  });
 }

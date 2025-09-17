@@ -16,9 +16,9 @@ class LocalStandardsRepo implements StandardsRepo {
     for (final sub in ['standards', 'cache/pending', 'cache/approved']) {
       await Directory('${root.path}/$sub').create(recursive: true);
     }
-    final aliasesFile = File('${root.path}/aliases.json');
-    if (!await aliasesFile.exists()) {
-      await aliasesFile.writeAsString(jsonEncode({}), flush: true);
+    final parametersFile = File('${root.path}/parameters.json');
+    if (!await parametersFile.exists()) {
+      await parametersFile.writeAsString(jsonEncode(<dynamic>[]), flush: true);
     }
     _root = root;
     return root;
@@ -29,9 +29,9 @@ class LocalStandardsRepo implements StandardsRepo {
     return File('${r.path}/standards/$code.json');
   }
 
-  Future<File> _aliasesFile() async {
+  Future<File> _parametersFile() async {
     final r = await _ensureRoot();
-    return File('${r.path}/aliases.json');
+    return File('${r.path}/parameters.json');
   }
 
   Future<File> _pendingFile(String key) async {
@@ -57,7 +57,7 @@ class LocalStandardsRepo implements StandardsRepo {
         out.add(StandardDef.fromJson(j));
       }
     }
-    out.sort((a,b)=>a.code.compareTo(b.code));
+    out.sort((a, b) => a.code.compareTo(b.code));
     return out;
   }
 
@@ -76,18 +76,28 @@ class LocalStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<Map<String, String>> loadAliases() async {
-    final f = await _aliasesFile();
+  Future<List<ParameterDef>> loadGlobalParameters() async {
+    final f = await _parametersFile();
     final txt = await f.readAsString();
-    final j = jsonDecode(txt) as Map<String, dynamic>;
-    return j.map((k,v)=>MapEntry(k, v.toString()));
+    if (txt.trim().isEmpty) return [];
+    final j = jsonDecode(txt);
+    if (j is List) {
+      return j
+          .whereType<Map>()
+          .map((e) => ParameterDef.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    }
+    return [];
   }
 
   @override
-  Future<void> saveAliases(Map<String, String> aliases) async {
-    final f = await _aliasesFile();
+  Future<void> saveGlobalParameters(List<ParameterDef> parameters) async {
+    final f = await _parametersFile();
     final tmp = File('${f.path}.tmp');
-    await tmp.writeAsString(jsonEncode(aliases), flush: true);
+    await tmp.writeAsString(
+      jsonEncode(parameters.map((e) => e.toJson()).toList()),
+      flush: true,
+    );
     await tmp.rename(f.path);
   }
 
