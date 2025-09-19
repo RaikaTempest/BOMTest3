@@ -1,38 +1,136 @@
 import 'package:flutter/material.dart';
+
 import '../core/models.dart';
+import '../data/project_repo.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
-import 'project_screen.dart';
-import '../data/project_repo.dart';
 import 'global_dynamic_components_screen.dart';
 import 'global_parameters_screen.dart';
+import 'project_screen.dart';
 import 'standards_manager_screen.dart';
+import 'widgets/bom_scaffold.dart';
+import 'widgets/glass_container.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return DefaultTabController(
       length: 4,
-      child: Scaffold(
+      child: BomScaffold(
         appBar: AppBar(
-          title: const Text('BOM Builder'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Job'),
-              Tab(text: 'Standards'),
-              Tab(text: 'Dynamic Components'),
-              Tab(text: 'Parameters'),
+          toolbarHeight: 90,
+          titleSpacing: 24,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondary.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: theme.colorScheme.secondary.withOpacity(0.25),
+                  ),
+                ),
+                child: Text(
+                  'BOM Toolkit',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.secondary,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'BOM Builder',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                ),
+              ),
             ],
           ),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 24),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.white.withOpacity(0.15)),
+                  color: Colors.white.withOpacity(0.05),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lightbulb_outline,
+                        color: theme.colorScheme.secondary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Need a refresher? Explore the Standards tab.',
+                      style: theme.textTheme.labelLarge
+                          ?.copyWith(color: Colors.white.withOpacity(0.75)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(82),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.white.withOpacity(0.12)),
+                  color: Colors.white.withOpacity(0.04),
+                ),
+                child: TabBar(
+                  splashBorderRadius: BorderRadius.circular(16),
+                  indicatorPadding: const EdgeInsets.all(6),
+                  labelPadding: const EdgeInsets.symmetric(vertical: 12),
+                  indicator: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: LinearGradient(
+                      colors: [
+                        theme.colorScheme.primary.withOpacity(0.8),
+                        theme.colorScheme.secondary.withOpacity(0.9),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: theme.colorScheme.primary.withOpacity(0.35),
+                        blurRadius: 20,
+                        spreadRadius: 1,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  tabs: const [
+                    Tab(text: 'Job'),
+                    Tab(text: 'Standards'),
+                    Tab(text: 'Dynamic Components'),
+                    Tab(text: 'Parameters'),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
-        body: TabBarView(
+        body: const TabBarView(
           children: [
-            const _JobTab(),
-            const StandardsManagerScreen(),
-            const GlobalDynamicComponentsScreen(),
-            const GlobalParametersScreen(),
+            _JobTab(),
+            StandardsManagerScreen(),
+            GlobalDynamicComponentsScreen(),
+            GlobalParametersScreen(),
           ],
         ),
       ),
@@ -61,7 +159,6 @@ class _JobTabState extends State<_JobTab> {
   Future<List<StandardDef>> _loadOrSeed() async {
     var list = await repo.listStandards();
     if (list.isEmpty) {
-      // Seed FS12 once on first run for the current platform backend.
       final std = StandardDef(
         code: 'FS12',
         name: 'Framing Standard 12',
@@ -101,6 +198,7 @@ class _JobTabState extends State<_JobTab> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return FutureBuilder<List<StandardDef>>(
       future: _future,
       builder: (context, snap) {
@@ -108,38 +206,246 @@ class _JobTabState extends State<_JobTab> {
           return const Center(child: CircularProgressIndicator());
         }
         if (snap.hasError) {
-          return Center(child: Text('Load error: ${snap.error}'));
-        }
-        return Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ElevatedButton(
-                onPressed: () async {
-                  final count = await _promptLocationCount(context);
-                  if (count != null) {
-                    // ignore: use_build_context_synchronously
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => ProjectScreen(initialCount: count),
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Center(
+              child: GlassContainer(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Icon(Icons.error_outline,
+                        size: 42, color: theme.colorScheme.error),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Load error',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
-                    );
-                  }
-                },
-                child: const Text('New project'),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      snap.error.toString(),
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: Colors.white70),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _loadProject,
-                child: const Text('Load project'),
+            ),
+          );
+        }
+        final standards = snap.data ?? <StandardDef>[];
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth > 900;
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 120),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1200),
+                  child: Wrap(
+                    spacing: 24,
+                    runSpacing: 24,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: isWide ? (constraints.maxWidth / 2) - 36 : double.infinity,
+                        child: GlassContainer(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _SectionHeader(
+                                title: 'Project workspace',
+                                subtitle:
+                                    'Quickly spin up, resume, or revisit BOM projects from a streamlined console.',
+                              ),
+                              const SizedBox(height: 24),
+                              Wrap(
+                                spacing: 16,
+                                runSpacing: 16,
+                                children: [
+                                  _ActionTile(
+                                    icon: Icons.play_circle_fill_rounded,
+                                    title: 'New project',
+                                    description: 'Start fresh with a guided setup for new work locations.',
+                                    onTap: () async {
+                                      final count = await _promptLocationCount(context);
+                                      if (count != null && mounted) {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) => ProjectScreen(initialCount: count),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  _ActionTile(
+                                    icon: Icons.folder_open_rounded,
+                                    gradient: const [Color(0xFF7B61FF), Color(0xFF45C4FF)],
+                                    title: 'Load project',
+                                    description: 'Open an existing build, pick up exactly where you left off.',
+                                    onTap: () {
+                                      _loadProject();
+                                    },
+                                  ),
+                                  _ActionTile(
+                                    icon: Icons.archive_rounded,
+                                    gradient: const [Color(0xFF19A186), Color(0xFF71EFA3)],
+                                    title: 'Archived projects',
+                                    description: 'Review previous work or restore completed project files.',
+                                    onTap: () {
+                                      _showArchivedProjects();
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: isWide ? (constraints.maxWidth / 2) - 36 : double.infinity,
+                        child: GlassContainer(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _SectionHeader(
+                                title: 'Standards snapshot',
+                                subtitle:
+                                    'A quick look at the rules powering your BOM calculations.',
+                              ),
+                              const SizedBox(height: 20),
+                              if (standards.isEmpty)
+                                Container(
+                                  padding: const EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    color: Colors.white.withOpacity(0.03),
+                                    border: Border.all(color: Colors.white.withOpacity(0.08)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.auto_fix_high,
+                                          color: theme.colorScheme.secondary),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          'No standards yet. Hop into the Standards tab to build your library.',
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(color: Colors.white70),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else ...[
+                                ...standards.take(4).map((std) {
+                                  final details = [
+                                    if (std.parameters.isNotEmpty)
+                                      '${std.parameters.length} parameter${std.parameters.length == 1 ? '' : 's'}',
+                                    if (std.dynamicComponents.isNotEmpty)
+                                      '${std.dynamicComponents.length} dynamic component${std.dynamicComponents.length == 1 ? '' : 's'}',
+                                  ].join(' • ');
+                                  return Container(
+                                    margin: const EdgeInsets.symmetric(vertical: 8),
+                                    padding: const EdgeInsets.all(18),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(18),
+                                      color: Colors.white.withOpacity(0.03),
+                                      border: Border.all(color: Colors.white.withOpacity(0.08)),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          width: 52,
+                                          height: 52,
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(16),
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                theme.colorScheme.primary.withOpacity(0.4),
+                                                theme.colorScheme.secondary.withOpacity(0.6),
+                                              ],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            std.code,
+                                            textAlign: TextAlign.center,
+                                            style: theme.textTheme.labelLarge?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                std.name.isEmpty ? std.code : std.name,
+                                                style: theme.textTheme.titleMedium?.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                details.isEmpty
+                                                    ? 'No additional configuration yet.'
+                                                    : details,
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(color: Colors.white70),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                                if (standards.length > 4)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Text(
+                                      '+${standards.length - 4} more configured standard${standards.length - 4 == 1 ? '' : 's'}.',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(color: Colors.white60),
+                                    ),
+                                  ),
+                              ],
+                              const SizedBox(height: 24),
+                              Row(
+                                children: [
+                                  FilledButton.icon(
+                                    onPressed: () =>
+                                        DefaultTabController.of(context)?.animateTo(1),
+                                    icon: const Icon(Icons.library_books_outlined),
+                                    label: const Text('Manage standards'),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  TextButton.icon(
+                                    onPressed: () =>
+                                        DefaultTabController.of(context)?.animateTo(3),
+                                    icon: const Icon(Icons.tune),
+                                    label: const Text('Edit global parameters'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _showArchivedProjects,
-                child: const Text('Archived projects'),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -198,27 +504,30 @@ Future<int?> _promptLocationCount(BuildContext context) async {
   final controller = TextEditingController(text: '1');
   return showDialog<int>(
     context: context,
-    builder:
-        (_) => AlertDialog(
-          title: const Text('Number of work locations'),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                final n = int.tryParse(controller.text.trim());
-                Navigator.pop(context, n); // may be null
-              },
-              child: const Text('OK'),
-            ),
-          ],
+    builder: (_) => AlertDialog(
+      title: const Text('Number of work locations'),
+      content: TextField(
+        controller: controller,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(
+          labelText: 'Locations',
+          hintText: 'How many work locations are you setting up?',
         ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final n = int.tryParse(controller.text.trim());
+            Navigator.pop(context, n);
+          },
+          child: const Text('Continue'),
+        ),
+      ],
+    ),
   );
 }
 
@@ -281,10 +590,10 @@ class _ProjectListDialogState extends State<_ProjectListDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final archivedMode = widget.mode == _ProjectListMode.archived;
     final title = archivedMode ? 'Archived projects' : 'Select project';
-    final tooltip =
-        archivedMode ? 'Unarchive project' : 'Archive project';
+    final tooltip = archivedMode ? 'Unarchive project' : 'Archive project';
     final icon = archivedMode ? Icons.unarchive : Icons.archive;
 
     return AlertDialog(
@@ -306,9 +615,8 @@ class _ProjectListDialogState extends State<_ProjectListDialog> {
             final names = snapshot.data ?? <String>[];
             if (names.isEmpty) {
               return Text(
-                archivedMode
-                    ? 'No archived projects.'
-                    : 'No projects saved.',
+                archivedMode ? 'No archived projects.' : 'No projects saved.',
+                style: theme.textTheme.bodyMedium,
               );
             }
             return ConstrainedBox(
@@ -321,14 +629,7 @@ class _ProjectListDialogState extends State<_ProjectListDialog> {
                   final processing = _processing.contains(name);
                   return ListTile(
                     title: Text(name),
-                    onTap: processing
-                        ? null
-                        : () => Navigator.of(context).pop(
-                              _ProjectSelection(
-                                name,
-                                archived: archivedMode,
-                              ),
-                            ),
+                    tileColor: Colors.white.withOpacity(0.04),
                     trailing: processing
                         ? const SizedBox(
                             width: 24,
@@ -340,6 +641,14 @@ class _ProjectListDialogState extends State<_ProjectListDialog> {
                             tooltip: tooltip,
                             onPressed: () => _toggleArchive(name),
                           ),
+                    onTap: processing
+                        ? null
+                        : () => Navigator.of(context).pop(
+                              _ProjectSelection(
+                                name,
+                                archived: archivedMode,
+                              ),
+                            ),
                   );
                 },
               ),
@@ -353,6 +662,122 @@ class _ProjectListDialogState extends State<_ProjectListDialog> {
           child: const Text('Close'),
         ),
       ],
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final String subtitle;
+
+  const _SectionHeader({
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          subtitle,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: Colors.white.withOpacity(0.72),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+  final VoidCallback onTap;
+  final List<Color>? gradient;
+
+  const _ActionTile({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
+    this.gradient,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = gradient ??
+        [
+          theme.colorScheme.primary.withOpacity(0.9),
+          theme.colorScheme.primary.withOpacity(0.6),
+        ];
+
+    return SizedBox(
+      width: 260,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: LinearGradient(
+                colors: colors,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: colors.last.withOpacity(0.4),
+                  blurRadius: 22,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.25),
+                  ),
+                  padding: const EdgeInsets.all(10),
+                  child: Icon(icon, size: 24, color: Colors.white),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  description,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white.withOpacity(0.85),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
