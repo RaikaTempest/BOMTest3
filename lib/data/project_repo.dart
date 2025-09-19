@@ -16,28 +16,38 @@ class LocalProjectRepo {
     return root;
   }
 
-  Future<File> _file(String name) async {
-    final r = await _ensureRoot();
-    return File('${r.path}/$name.json');
+  Future<Directory> _ensureArchiveRoot() async {
+    final root = await _ensureRoot();
+    final archived = Directory('${root.path}/archived');
+    await archived.create(recursive: true);
+    return archived;
+  }
+
+  Future<File> _file(String name, {bool archived = false}) async {
+    final dir = archived ? await _ensureArchiveRoot() : await _ensureRoot();
+    return File('${dir.path}/$name.json');
   }
 
   Future<void> saveProject(Project p) async {
-    final f = await _file(p.name);
-    final tmp = File('${f.path}.tmp');
+    final activeFile = await _file(p.name);
+    final archivedFile = await _file(p.name, archived: true);
+    if (await archivedFile.exists()) {
+      await archivedFile.delete();
+    }
+    final tmp = File('${activeFile.path}.tmp');
     await tmp.writeAsString(jsonEncode(p.toJson()), flush: true);
-    await tmp.rename(f.path);
+    await tmp.rename(activeFile.path);
   }
 
-  Future<Project?> loadProject(String name) async {
-    final f = await _file(name);
+  Future<Project?> loadProject(String name, {bool archived = false}) async {
+    final f = await _file(name, archived: archived);
     if (!await f.exists()) return null;
     final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
     return Project.fromJson(j);
   }
 
-  Future<List<String>> listProjects() async {
-    final r = await _ensureRoot();
-    final dir = r;
+  Future<List<String>> listProjects({bool archived = false}) async {
+    final dir = archived ? await _ensureArchiveRoot() : await _ensureRoot();
     final out = <String>[];
     await for (final f in dir.list()) {
       if (f is File && f.path.endsWith('.json')) {
@@ -46,5 +56,25 @@ class LocalProjectRepo {
     }
     out.sort();
     return out;
+  }
+
+  Future<void> archiveProject(String name) async {
+    final source = await _file(name);
+    if (!await source.exists()) return;
+    final destination = await _file(name, archived: true);
+    if (await destination.exists()) {
+      await destination.delete();
+    }
+    await source.rename(destination.path);
+  }
+
+  Future<void> unarchiveProject(String name) async {
+    final source = await _file(name, archived: true);
+    if (!await source.exists()) return;
+    final destination = await _file(name);
+    if (await destination.exists()) {
+      await destination.delete();
+    }
+    await source.rename(destination.path);
   }
 }

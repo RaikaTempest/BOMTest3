@@ -132,6 +132,11 @@ class _JobTabState extends State<_JobTab> {
                 onPressed: _loadProject,
                 child: const Text('Load project'),
               ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _showArchivedProjects,
+                child: const Text('Archived projects'),
+              ),
             ],
           ),
         );
@@ -141,26 +146,41 @@ class _JobTabState extends State<_JobTab> {
 
   Future<void> _loadProject() async {
     final repo = LocalProjectRepo();
-    final names = await repo.listProjects();
-    if (names.isEmpty) return;
-    final name = await showDialog<String>(
+    final selection = await showDialog<_ProjectSelection>(
       context: context,
-      builder: (_) => SimpleDialog(
-        title: const Text('Select project'),
-        children: names
-            .map(
-              (n) => SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, n),
-                child: Text(n),
-              ),
-            )
-            .toList(),
+      builder: (_) => _ProjectListDialog(
+        repo: repo,
+        mode: _ProjectListMode.active,
       ),
     );
-    if (name == null) return;
-    final proj = await repo.loadProject(name);
-    if (proj == null) return;
-    // ignore: use_build_context_synchronously
+    if (selection == null) return;
+    final proj = await repo.loadProject(
+      selection.name,
+      archived: selection.archived,
+    );
+    if (proj == null || !mounted) return;
+    _openExistingProject(proj);
+  }
+
+  Future<void> _showArchivedProjects() async {
+    final repo = LocalProjectRepo();
+    final selection = await showDialog<_ProjectSelection>(
+      context: context,
+      builder: (_) => _ProjectListDialog(
+        repo: repo,
+        mode: _ProjectListMode.archived,
+      ),
+    );
+    if (selection == null) return;
+    final proj = await repo.loadProject(
+      selection.name,
+      archived: selection.archived,
+    );
+    if (proj == null || !mounted) return;
+    _openExistingProject(proj);
+  }
+
+  void _openExistingProject(Project proj) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ProjectScreen(
@@ -199,4 +219,139 @@ Future<int?> _promptLocationCount(BuildContext context) async {
           ],
         ),
   );
+}
+
+enum _ProjectListMode { active, archived }
+
+class _ProjectSelection {
+  final String name;
+  final bool archived;
+
+  const _ProjectSelection(this.name, {required this.archived});
+}
+
+class _ProjectListDialog extends StatefulWidget {
+  final LocalProjectRepo repo;
+  final _ProjectListMode mode;
+
+  const _ProjectListDialog({
+    required this.repo,
+    required this.mode,
+  });
+
+  @override
+  State<_ProjectListDialog> createState() => _ProjectListDialogState();
+}
+
+class _ProjectListDialogState extends State<_ProjectListDialog> {
+  late Future<List<String>> _future;
+  final Set<String> _processing = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<List<String>> _load() {
+    return widget.repo.listProjects(
+      archived: widget.mode == _ProjectListMode.archived,
+    );
+  }
+
+  Future<void> _toggleArchive(String name) async {
+    setState(() {
+      _processing.add(name);
+    });
+    try {
+      if (widget.mode == _ProjectListMode.archived) {
+        await widget.repo.unarchiveProject(name);
+      } else {
+        await widget.repo.archiveProject(name);
+      }
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _processing.remove(name);
+        _future = _load();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final archivedMode = widget.mode == _ProjectListMode.archived;
+    final title = archivedMode ? 'Archived projects' : 'Select project';
+    final tooltip =
+        archivedMode ? 'Unarchive project' : 'Archive project';
+    final icon = archivedMode ? Icons.unarchive : Icons.archive;
+
+    return AlertDialog(
+      title: Text(title),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: FutureBuilder<List<String>>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const SizedBox(
+                height: 120,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (snapshot.hasError) {
+              return Text('Error: ${snapshot.error}');
+            }
+            final names = snapshot.data ?? <String>[];
+            if (names.isEmpty) {
+              return Text(
+                archivedMode
+                    ? 'No archived projects.'
+                    : 'No projects saved.',
+              );
+            }
+            return ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 300),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: names.length,
+                itemBuilder: (context, index) {
+                  final name = names[index];
+                  final processing = _processing.contains(name);
+                  return ListTile(
+                    title: Text(name),
+                    onTap: processing
+                        ? null
+                        : () => Navigator.of(context).pop(
+                              _ProjectSelection(
+                                name,
+                                archived: archivedMode,
+                              ),
+                            ),
+                    trailing: processing
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : IconButton(
+                            icon: Icon(icon),
+                            tooltip: tooltip,
+                            onPressed: () => _toggleArchive(name),
+                          ),
+                  );
+                },
+              ),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
 }
