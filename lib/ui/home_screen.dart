@@ -55,30 +55,10 @@ class HomeScreen extends StatelessWidget {
               ),
             ],
           ),
-          actions: [
+          actions: const [
             Padding(
-              padding: const EdgeInsets.only(right: 24),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: Colors.white.withOpacity(0.15)),
-                  color: Colors.white.withOpacity(0.05),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.lightbulb_outline,
-                        color: theme.colorScheme.secondary),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Need a refresher? Explore the Standards tab.',
-                      style: theme.textTheme.labelLarge
-                          ?.copyWith(color: Colors.white.withOpacity(0.75)),
-                    ),
-                  ],
-                ),
-              ),
+              padding: EdgeInsets.only(right: 24),
+              child: _GuideButton(),
             ),
           ],
           bottom: PreferredSize(
@@ -495,6 +475,161 @@ class _JobTabState extends State<_JobTab> {
           loaded: proj.locations,
           name: proj.name,
         ),
+      ),
+    );
+  }
+}
+
+class _GuideButton extends StatelessWidget {
+  const _GuideButton();
+
+  void _showGuide(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => const _GuideDialog(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return TextButton(
+      onPressed: () => _showGuide(context),
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: Colors.white.withOpacity(0.05),
+        foregroundColor: Colors.white.withOpacity(0.85),
+      ).copyWith(
+        side: MaterialStateProperty.all(
+          BorderSide(color: Colors.white.withOpacity(0.15)),
+        ),
+        overlayColor: MaterialStateProperty.all(
+          theme.colorScheme.secondary.withOpacity(0.12),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.lightbulb_outline, color: theme.colorScheme.secondary),
+          const SizedBox(width: 8),
+          Text(
+            'Need a refresher? Open the guide.',
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: Colors.white.withOpacity(0.85),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GuideDialog extends StatelessWidget {
+  const _GuideDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: Text(
+        'Getting started with BOM Builder',
+        style: theme.textTheme.titleLarge,
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Text(
+              'Use this quick guide to understand the flow for building a bill of materials.',
+            ),
+            SizedBox(height: 16),
+            _GuideStep(
+              icon: Icons.assignment,
+              title: '1. Review the Job tab',
+              description:
+                  'Browse available standards and select the ones that match your project. '
+                  'Use the search and filters to focus on what you need.',
+            ),
+            _GuideStep(
+              icon: Icons.library_books,
+              title: '2. Manage Standards',
+              description:
+                  'Open the Standards tab to explore, edit, and organize the templates your team relies on. '
+                  'This is where you can fine-tune descriptions, assemblies, and cost data.',
+            ),
+            _GuideStep(
+              icon: Icons.extension,
+              title: '3. Configure Dynamic Components',
+              description:
+                  'Customize reusable components so they match the unique needs of each project. '
+                  'Adjust options and save them for the team to reuse.',
+            ),
+            _GuideStep(
+              icon: Icons.tune,
+              title: '4. Update Global Parameters',
+              description:
+                  'Set project-wide variables like labor rates, markups, or material costs. '
+                  'These values feed into every BOM you build.',
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Tip: Standards are your single source of truth—keep them accurate and everyone benefits.',
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+class _GuideStep extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+
+  const _GuideStep({
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: theme.colorScheme.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
