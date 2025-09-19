@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../core/bom_exporter.dart';
@@ -236,21 +240,56 @@ class _ProjectScreenState extends State<ProjectScreen> {
     final standards = await repo.listStandards();
     final exporter = BomExporter();
     final csv = exporter.buildCsv(locations, standards);
-    await showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('BOM CSV'),
-        content: SingleChildScrollView(
-          child: SelectableText(csv),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+    const csvTypeGroup = XTypeGroup(
+      label: 'CSV',
+      extensions: <String>['csv'],
+      mimeTypes: <String>['text/csv'],
     );
+    final String suggestedName = _buildExportFileName();
+    try {
+      final FileSaveLocation? location = await getSaveLocation(
+        acceptedTypeGroups: <XTypeGroup>[csvTypeGroup],
+        suggestedName: suggestedName,
+      );
+      if (location == null) {
+        return;
+      }
+
+      final Uint8List bytes = Uint8List.fromList(utf8.encode(csv));
+      final XFile file = XFile.fromData(
+        bytes,
+        mimeType: 'text/csv',
+        name: suggestedName,
+      );
+
+      var path = location.path;
+      if (path.isNotEmpty && !path.toLowerCase().endsWith('.csv')) {
+        path = '$path.csv';
+      }
+
+      await file.saveTo(path);
+      if (!mounted) return;
+      final String message =
+          path.isEmpty ? 'Exported BOM CSV' : 'Exported BOM CSV to $path';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to export CSV: $error')),
+      );
+    }
+  }
+
+  String _buildExportFileName() {
+    final String rawName =
+        (_name?.trim().isNotEmpty ?? false) ? _name!.trim() : 'bom_export';
+    final sanitized = rawName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '_');
+    final collapsed = sanitized.replaceAll(RegExp(r'_+'), '_');
+    final trimmed = collapsed.replaceAll(RegExp(r'^_+|_+$'), '');
+    final base = trimmed.isEmpty ? 'bom_export' : trimmed;
+    return '$base.csv';
   }
 
   Future<void> _saveProject() async {
