@@ -104,86 +104,112 @@ class _ParameterEditorState extends State<ParameterEditor> {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Column(
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: key,
-                    decoration: const InputDecoration(labelText: 'Key'),
-                    onChanged: (_) => _notify(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                DropdownButton<ParamType>(
-                  value: type,
-                  onChanged: (v) {
-                    if (v != null) {
-                      setState(() {
-                        type = v;
-                      });
-                      _notify();
-                    }
-                  },
-                  items: ParamType.values
-                      .map(
-                        (e) => DropdownMenuItem(
-                          value: e,
-                          child: Text(paramTypeToString(e)),
-                        ),
-                      )
-                      .toList(),
-                ),
-                IconButton(
-                  onPressed: widget.onDelete,
-                  icon: const Icon(Icons.delete),
-                ),
-              ],
+            Expanded(
+              child: TextField(
+                controller: key,
+                decoration: const InputDecoration(labelText: 'Key'),
+                onChanged: (_) => _notify(),
+              ),
             ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: unit,
-                    decoration: const InputDecoration(labelText: 'Unit'),
-                    onChanged: (_) => _notify(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: allowed,
-                    decoration: const InputDecoration(
-                      labelText: 'Allowed Values (comma)',
-                    ),
-                    onChanged: (_) => _notify(),
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                Checkbox(
-                  value: requiredField,
-                  onChanged: (v) {
+            const SizedBox(width: 12),
+            Expanded(
+              child: DropdownButtonFormField<ParamType>(
+                value: type,
+                decoration: const InputDecoration(labelText: 'Type'),
+                items: ParamType.values
+                    .map(
+                      (e) => DropdownMenuItem(
+                        value: e,
+                        child: Text(paramTypeToString(e)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) {
                     setState(() {
-                      requiredField = v ?? false;
+                      type = v;
                     });
                     _notify();
-                  },
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Tooltip(
+              message: 'Remove parameter',
+              child: IconButton.filledTonal(
+                onPressed: widget.onDelete,
+                icon: const Icon(Icons.delete_outline),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white.withOpacity(0.08),
                 ),
-                const Text('Required'),
-              ],
+              ),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: unit,
+                decoration: const InputDecoration(labelText: 'Unit'),
+                onChanged: (_) => _notify(),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                controller: allowed,
+                decoration: const InputDecoration(
+                  labelText: 'Allowed values (comma separated)',
+                ),
+                onChanged: (_) => _notify(),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            color: Colors.white.withOpacity(0.04),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+          ),
+          child: Row(
+            children: [
+              Checkbox(
+                value: requiredField,
+                onChanged: (v) {
+                  setState(() {
+                    requiredField = v ?? false;
+                  });
+                  _notify();
+                },
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Required',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const Spacer(),
+              if (type == ParamType.enumType)
+                Text(
+                  'Separate multiple values with commas',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: Colors.white.withOpacity(0.6)),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

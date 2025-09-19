@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../core/models.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
+import 'widgets/bom_scaffold.dart';
+import 'widgets/glass_container.dart';
 import 'widgets/parameter_editor.dart';
 
 class GlobalParametersScreen extends StatefulWidget {
@@ -121,46 +123,72 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final theme = Theme.of(context);
+    return BomScaffold(
       appBar: AppBar(
         title: const Text('Global Parameters'),
         actions: [
-          TextButton(
-            onPressed: _save,
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white,
-              backgroundColor: Theme.of(context).colorScheme.secondary,
+          Padding(
+            padding: const EdgeInsets.only(right: 24),
+            child: FilledButton.icon(
+              onPressed: _save,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('Save changes'),
             ),
-            child: const Text('Save'),
           ),
         ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : parameters.isEmpty
-              ? const Center(child: Text('No parameters defined yet.'))
+              ? Center(
+                  child: GlassContainer(
+                    margin: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.tune,
+                            size: 46, color: theme.colorScheme.secondary),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No parameters defined yet',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Create your global parameters to reuse them across every project.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
               : Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: ListView(
-                    children: [
-                      ...parameters
-                          .asMap()
-                          .entries
-                          .map(
-                            (e) => ParameterEditor(
-                              key: ValueKey(_parameterIds[e.key]),
-                              def: e.value,
-                              onChanged: (p) => _onParameterChanged(e.key, p),
-                              onDelete: () => _removeParameter(e.key),
-                            ),
-                          )
-                          .toList(),
-                    ],
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
+                  child: ListView.builder(
+                    itemCount: parameters.length,
+                    itemBuilder: (context, index) {
+                      final def = parameters[index];
+                      return GlassContainer(
+                        margin: const EdgeInsets.symmetric(vertical: 12),
+                        child: ParameterEditor(
+                          key: ValueKey(_parameterIds[index]),
+                          def: def,
+                          onChanged: (p) => _onParameterChanged(index, p),
+                          onDelete: () => _removeParameter(index),
+                        ),
+                      );
+                    },
                   ),
                 ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: _addParameter,
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('Add parameter'),
       ),
     );
   }
