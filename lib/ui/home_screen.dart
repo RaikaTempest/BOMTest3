@@ -3,9 +3,10 @@ import '../core/models.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
 import 'project_screen.dart';
-import 'standards_manager_screen.dart';
-import 'global_parameters_screen.dart';
 import '../data/project_repo.dart';
+import 'global_dynamic_components_screen.dart';
+import 'global_parameters_screen.dart';
+import 'standards_manager_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -21,7 +22,7 @@ class HomeScreen extends StatelessWidget {
             tabs: [
               Tab(text: 'Job'),
               Tab(text: 'Standards'),
-              Tab(text: 'Approvals'),
+              Tab(text: 'Dynamic Components'),
               Tab(text: 'Parameters'),
             ],
           ),
@@ -30,7 +31,7 @@ class HomeScreen extends StatelessWidget {
           children: [
             const _JobTab(),
             const StandardsManagerScreen(),
-            const Center(child: Text('Approvals')),
+            const GlobalDynamicComponentsScreen(),
             const GlobalParametersScreen(),
           ],
         ),
