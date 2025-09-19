@@ -35,4 +35,43 @@ void main() {
     final loaded = await repo.loadProject('p1');
     expect(loaded?.locations.first.barcode, 'a');
   });
+
+  test('archives and unarchives projects', () async {
+    final repo = LocalProjectRepo();
+    await repo.saveProject(Project(name: 'p1', locations: []));
+    await repo.saveProject(Project(name: 'p2', locations: []));
+
+    await repo.archiveProject('p1');
+    expect(await repo.listProjects(), ['p2']);
+    expect(await repo.listProjects(archived: true), ['p1']);
+
+    final archived = await repo.loadProject('p1', archived: true);
+    expect(archived?.name, 'p1');
+
+    await repo.unarchiveProject('p1');
+    expect(await repo.listProjects(), ['p1', 'p2']);
+    expect(await repo.listProjects(archived: true), isEmpty);
+  });
+
+  test('saving project removes archived copy', () async {
+    final repo = LocalProjectRepo();
+    final proj = Project(name: 'p1', locations: []);
+    await repo.saveProject(proj);
+    await repo.archiveProject('p1');
+
+    expect(await repo.listProjects(), isEmpty);
+    expect(await repo.listProjects(archived: true), ['p1']);
+
+    final updated = Project(
+      name: 'p1',
+      locations: [WorkLocation(barcode: 'z')],
+    );
+    await repo.saveProject(updated);
+
+    expect(await repo.listProjects(), ['p1']);
+    expect(await repo.listProjects(archived: true), isEmpty);
+
+    final loaded = await repo.loadProject('p1');
+    expect(loaded?.locations.first.barcode, 'z');
+  });
 }
