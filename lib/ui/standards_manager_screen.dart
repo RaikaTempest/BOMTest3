@@ -81,10 +81,21 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   late final TextEditingController code;
   late final TextEditingController name;
   List<ParameterDef> parameters = [];
+  final List<String> _parameterIds = [];
+  int _nextParameterId = 0;
   List<StaticComponent> staticComponents = [];
   List<DynamicComponentDef> dynamicComponents = [];
   List<ParameterDef> globalParameters = [];
   bool _loadingGlobalParameters = true;
+
+  String _createParameterId() => 'standard_param_${_nextParameterId++}';
+
+  void _resetParameterIds() {
+    _nextParameterId = 0;
+    _parameterIds
+      ..clear()
+      ..addAll(List.generate(parameters.length, (_) => _createParameterId()));
+  }
 
   void _combineGlobalAndCurrent() {
     final map = <String, ParameterDef>{};
@@ -124,6 +135,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   void _addNewParameter() {
     setState(() {
       parameters.add(ParameterDef(key: '', type: ParamType.text));
+      _parameterIds.add(_createParameterId());
       _combineGlobalAndCurrent();
     });
   }
@@ -159,6 +171,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     if (selected == null) return;
     setState(() {
       parameters.add(_cloneParameter(selected));
+      _parameterIds.add(_createParameterId());
       _combineGlobalAndCurrent();
     });
   }
@@ -181,6 +194,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   void _removeParameterAt(int index) {
     setState(() {
       parameters.removeAt(index);
+      _parameterIds.removeAt(index);
       _combineGlobalAndCurrent();
     });
   }
@@ -216,6 +230,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     code = TextEditingController(text: e?.code ?? '');
     name = TextEditingController(text: e?.name ?? '');
     parameters = e?.parameters.toList() ?? [];
+    _resetParameterIds();
     staticComponents = e?.staticComponents.toList() ?? [];
     dynamicComponents = e?.dynamicComponents.toList() ?? [];
     _loadGlobalParameters();
@@ -329,7 +344,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                 .entries
                 .map(
                   (e) => ParameterEditor(
-                    key: ValueKey('param_${e.key}_${parameters[e.key].key}'),
+                    key: ValueKey(_parameterIds[e.key]),
                     def: e.value,
                     onChanged: (p) => _onParameterChanged(e.key, p),
                     onDelete: () => _removeParameterAt(e.key),

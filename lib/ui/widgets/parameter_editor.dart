@@ -35,16 +35,44 @@ class _ParameterEditorState extends State<ParameterEditor> {
     type = widget.def.type;
   }
 
+  TextSelection _clampSelection(TextSelection selection, int maxLength) {
+    if (!selection.isValid) {
+      return TextSelection.collapsed(offset: maxLength);
+    }
+    int clampOffset(int offset) {
+      if (offset < 0) return 0;
+      if (offset > maxLength) return maxLength;
+      return offset;
+    }
+
+    return TextSelection(
+      baseOffset: clampOffset(selection.baseOffset),
+      extentOffset: clampOffset(selection.extentOffset),
+      affinity: selection.affinity,
+      isDirectional: selection.isDirectional,
+    );
+  }
+
+  void _syncController(TextEditingController controller, String text) {
+    if (controller.text == text) return;
+    final value = controller.value;
+    controller.value = value.copyWith(
+      text: text,
+      selection: _clampSelection(value.selection, text.length),
+      composing: TextRange.empty,
+    );
+  }
+
   @override
   void didUpdateWidget(covariant ParameterEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.def.key != widget.def.key) {
-      key.text = widget.def.key;
+      _syncController(key, widget.def.key);
     }
     final oldUnit = oldWidget.def.unit ?? '';
     final newUnit = widget.def.unit ?? '';
     if (oldUnit != newUnit) {
-      unit.text = newUnit;
+      _syncController(unit, newUnit);
     }
     if (oldWidget.def.type != widget.def.type) {
       type = widget.def.type;
@@ -54,7 +82,7 @@ class _ParameterEditorState extends State<ParameterEditor> {
     }
     if (oldWidget.def.allowedValues.join(',') !=
         widget.def.allowedValues.join(',')) {
-      allowed.text = widget.def.allowedValues.join(',');
+      _syncController(allowed, widget.def.allowedValues.join(','));
     }
   }
 
