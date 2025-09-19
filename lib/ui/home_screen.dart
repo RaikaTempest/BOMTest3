@@ -557,7 +557,7 @@ class _GuideDialog extends StatelessWidget {
               title: '2. Manage Standards',
               description:
                   'Open the Standards tab to explore, edit, and organize the templates your team relies on. '
-                  'This is where you can fine-tune descriptions, assemblies, and cost data.',
+                  'This is where you can fine-tune descriptions and assemblies.',
             ),
             _GuideStep(
               icon: Icons.extension,
@@ -570,7 +570,7 @@ class _GuideDialog extends StatelessWidget {
               icon: Icons.tune,
               title: '4. Update Global Parameters',
               description:
-                  'Set project-wide variables like labor rates, markups, or material costs. '
+                  'Set project-wide variables like Pole height, Wire size, or Span length. '
                   'These values feed into every BOM you build.',
             ),
             SizedBox(height: 12),
