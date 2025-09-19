@@ -4,10 +4,11 @@ import '../core/models.dart';
 import 'repo.dart';
 
 class WebStandardsRepo implements StandardsRepo {
-  static const _kStandards   = 'bom_standards';
-  static const _kParameters  = 'bom_parameters';
-  static const _kPending     = 'bom_cache_pending';
-  static const _kApproved    = 'bom_cache_approved';
+  static const _kStandards = 'bom_standards';
+  static const _kParameters = 'bom_parameters';
+  static const _kDynamicComponents = 'bom_dynamic_components';
+  static const _kPending = 'bom_cache_pending';
+  static const _kApproved = 'bom_cache_approved';
 
   Map<String, dynamic> _getMap(String key) {
     final txt = html.window.localStorage[key];
@@ -71,6 +72,34 @@ class WebStandardsRepo implements StandardsRepo {
       _kParameters,
       {
         'items': parameters.map((e) => e.toJson()).toList(),
+      },
+    );
+  }
+
+  @override
+  Future<List<DynamicComponentDef>> loadGlobalDynamicComponents() async {
+    final raw = _getMap(_kDynamicComponents);
+    final list = <DynamicComponentDef>[];
+    final values = raw['items'];
+    if (values is List) {
+      for (final entry in values) {
+        if (entry is Map) {
+          list.add(
+            DynamicComponentDef.fromJson(entry.cast<String, dynamic>()),
+          );
+        }
+      }
+    }
+    return list;
+  }
+
+  @override
+  Future<void> saveGlobalDynamicComponents(
+      List<DynamicComponentDef> components) async {
+    _setMap(
+      _kDynamicComponents,
+      {
+        'items': components.map((e) => e.toJson()).toList(),
       },
     );
   }

@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
 import 'dynamic_component_rules_screen.dart';
+import 'widgets/dynamic_component_editor.dart';
 import 'widgets/parameter_editor.dart';
 
 class StandardsManagerScreen extends StatefulWidget {
@@ -85,8 +88,12 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   int _nextParameterId = 0;
   List<StaticComponent> staticComponents = [];
   List<DynamicComponentDef> dynamicComponents = [];
+  final List<String> _dynamicComponentIds = [];
+  int _nextDynamicComponentId = 0;
   List<ParameterDef> globalParameters = [];
   bool _loadingGlobalParameters = true;
+  List<DynamicComponentDef> globalDynamicComponents = [];
+  bool _loadingGlobalDynamicComponents = true;
 
   String _createParameterId() => 'standard_param_${_nextParameterId++}';
 
@@ -95,6 +102,18 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     _parameterIds
       ..clear()
       ..addAll(List.generate(parameters.length, (_) => _createParameterId()));
+  }
+
+  String _createDynamicComponentId() =>
+      'standard_dynamic_${_nextDynamicComponentId++}';
+
+  void _resetDynamicComponentIds() {
+    _nextDynamicComponentId = 0;
+    _dynamicComponentIds
+      ..clear()
+      ..addAll(
+        List.generate(dynamicComponents.length, (_) => _createDynamicComponentId()),
+      );
   }
 
   void _combineGlobalAndCurrent() {
@@ -113,6 +132,22 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
   }
 
+  void _combineGlobalDynamicComponents() {
+    final map = <String, DynamicComponentDef>{};
+    for (final c in globalDynamicComponents) {
+      final name = c.name.trim();
+      if (name.isEmpty) continue;
+      map[name] = c;
+    }
+    for (final c in dynamicComponents) {
+      final name = c.name.trim();
+      if (name.isEmpty) continue;
+      map[name] = c;
+    }
+    globalDynamicComponents = map.values.toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  }
+
   Future<void> _loadGlobalParameters() async {
     try {
       final list = await widget.repo.loadGlobalParameters();
@@ -128,6 +163,25 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         globalParameters = [];
         _combineGlobalAndCurrent();
         _loadingGlobalParameters = false;
+      });
+    }
+  }
+
+  Future<void> _loadGlobalDynamicComponents() async {
+    try {
+      final list = await widget.repo.loadGlobalDynamicComponents();
+      if (!mounted) return;
+      setState(() {
+        globalDynamicComponents = list;
+        _combineGlobalDynamicComponents();
+        _loadingGlobalDynamicComponents = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        globalDynamicComponents = [];
+        _combineGlobalDynamicComponents();
+        _loadingGlobalDynamicComponents = false;
       });
     }
   }
@@ -176,6 +230,44 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     });
   }
 
+  Future<void> _addExistingDynamicComponent() async {
+    if (_loadingGlobalDynamicComponents) return;
+    final existingNames = dynamicComponents.map((e) => e.name).toSet();
+    final options = globalDynamicComponents
+        .where((c) => c.name.isNotEmpty && !existingNames.contains(c.name))
+        .toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    if (options.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No available global dynamic components to add.'),
+        ),
+      );
+      return;
+    }
+    final selected = await showDialog<DynamicComponentDef>(
+      context: context,
+      builder: (context) {
+        return SimpleDialog(
+          title: const Text('Select dynamic component'),
+          children: [
+            for (final option in options)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, option),
+                child: Text(option.name),
+              ),
+          ],
+        );
+      },
+    );
+    if (selected == null) return;
+    setState(() {
+      dynamicComponents.add(_cloneDynamicComponent(selected));
+      _dynamicComponentIds.add(_createDynamicComponentId());
+      _combineGlobalDynamicComponents();
+    });
+  }
+
   ParameterDef _cloneParameter(ParameterDef source) => ParameterDef(
         key: source.key,
         type: source.type,
@@ -183,6 +275,31 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         allowedValues: List<String>.from(source.allowedValues),
         required: source.required,
       );
+
+  DynamicComponentDef _cloneDynamicComponent(DynamicComponentDef source) {
+    return DynamicComponentDef(
+      name: source.name,
+      selectionStrategy: source.selectionStrategy,
+      rules: source.rules
+          .map(
+            (rule) => RuleDef(
+              expr:
+                  jsonDecode(jsonEncode(rule.expr)) as Map<String, dynamic>,
+              outputs: rule.outputs
+                  .map(
+                    (o) => OutputSpec(
+                      mm: o.mm,
+                      qty: o.qty,
+                      qtyFormula: o.qtyFormula,
+                    ),
+                  )
+                  .toList(),
+              priority: rule.priority,
+            ),
+          )
+          .toList(),
+    );
+  }
 
   void _onParameterChanged(int index, ParameterDef def) {
     setState(() {
@@ -215,6 +332,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
           dynamicComponents[index] = updated;
         }
         _combineGlobalAndCurrent();
+        _combineGlobalDynamicComponents();
       });
     } catch (e) {
       ScaffoldMessenger.of(
@@ -233,7 +351,10 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     _resetParameterIds();
     staticComponents = e?.staticComponents.toList() ?? [];
     dynamicComponents = e?.dynamicComponents.toList() ?? [];
+    _resetDynamicComponentIds();
+    _combineGlobalDynamicComponents();
     _loadGlobalParameters();
+    _loadGlobalDynamicComponents();
   }
 
   @override
@@ -273,12 +394,39 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         );
       }
 
+      final cleanedDynamic = <DynamicComponentDef>[];
+      final seenDynamicNames = <String>{};
+      for (final c in dynamicComponents) {
+        final nameValue = c.name.trim();
+        if (nameValue.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Dynamic component name cannot be empty.'),
+            ),
+          );
+          return;
+        }
+        if (!seenDynamicNames.add(nameValue)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Duplicate dynamic component name: $nameValue')),
+          );
+          return;
+        }
+        cleanedDynamic.add(
+          DynamicComponentDef(
+            name: nameValue,
+            selectionStrategy: c.selectionStrategy,
+            rules: c.rules,
+          ),
+        );
+      }
+
       final std = StandardDef(
         code: code.text.trim(),
         name: name.text.trim(),
         parameters: cleaned,
         staticComponents: staticComponents,
-        dynamicComponents: dynamicComponents,
+        dynamicComponents: cleanedDynamic,
       );
       final global = await widget.repo.loadGlobalParameters();
       final map = <String, ParameterDef>{};
@@ -293,6 +441,21 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       final updatedGlobal = map.values.toList()
         ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
       await widget.repo.saveGlobalParameters(updatedGlobal);
+
+      final globalDynamic = await widget.repo.loadGlobalDynamicComponents();
+      final dynamicMap = <String, DynamicComponentDef>{};
+      for (final c in globalDynamic) {
+        final nameValue = c.name.trim();
+        if (nameValue.isEmpty) continue;
+        dynamicMap[nameValue] = c;
+      }
+      for (final c in cleanedDynamic) {
+        dynamicMap[c.name] = c;
+      }
+      final updatedGlobalDynamic = dynamicMap.values.toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      await widget.repo.saveGlobalDynamicComponents(updatedGlobalDynamic);
+
       await widget.repo.saveStandard(std);
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -398,38 +561,58 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
             const SizedBox(height: 8),
             const Text('Dynamic Components'),
             const SizedBox(height: 4),
+            if (_loadingGlobalDynamicComponents)
+              const LinearProgressIndicator(),
+            if (_loadingGlobalDynamicComponents)
+              const SizedBox(height: 8),
             ...dynamicComponents
                 .asMap()
                 .entries
                 .map(
-                  (e) => _DynamicEditor(
+                  (e) => DynamicComponentEditor(
+                    key: ValueKey(_dynamicComponentIds[e.key]),
                     comp: e.value,
-                    onNameChanged:
-                        (name) => setState(() {
-                          final old = dynamicComponents[e.key];
-                          dynamicComponents[e.key] = DynamicComponentDef(
-                            name: name,
-                            selectionStrategy: old.selectionStrategy,
-                            rules: old.rules,
-                          );
-                        }),
+                    onNameChanged: (name) => setState(() {
+                      final old = dynamicComponents[e.key];
+                      dynamicComponents[e.key] = DynamicComponentDef(
+                        name: name,
+                        selectionStrategy: old.selectionStrategy,
+                        rules: old.rules,
+                      );
+                      _combineGlobalDynamicComponents();
+                    }),
                     onEditRules: () => _openRulesManager(e.key),
                     onDelete:
                         () => setState(() {
                           dynamicComponents.removeAt(e.key);
+                          _dynamicComponentIds.removeAt(e.key);
+                          _combineGlobalDynamicComponents();
                         }),
                   ),
                 )
                 .toList(),
-            TextButton.icon(
-              onPressed:
-                  () => setState(() {
+            Wrap(
+              spacing: 8,
+              children: [
+                TextButton.icon(
+                  onPressed: () => setState(() {
                     dynamicComponents.add(
                       DynamicComponentDef(name: '', rules: []),
                     );
+                    _dynamicComponentIds.add(_createDynamicComponentId());
+                    _combineGlobalDynamicComponents();
                   }),
-              icon: const Icon(Icons.add),
-              label: const Text('Add Dynamic Component'),
+                  icon: const Icon(Icons.add),
+                  label: const Text('New Dynamic Component'),
+                ),
+                TextButton.icon(
+                  onPressed: _loadingGlobalDynamicComponents
+                      ? null
+                      : _addExistingDynamicComponent,
+                  icon: const Icon(Icons.playlist_add),
+                  label: const Text('Add Existing Dynamic Component'),
+                ),
+              ],
             ),
           ],
         ),
@@ -515,68 +698,6 @@ class _StaticEditorState extends State<_StaticEditor> {
   void dispose() {
     mm.dispose();
     qty.dispose();
-    super.dispose();
-  }
-}
-
-class _DynamicEditor extends StatefulWidget {
-  final DynamicComponentDef comp;
-  final ValueChanged<String> onNameChanged;
-  final VoidCallback onEditRules;
-  final VoidCallback onDelete;
-
-  const _DynamicEditor({
-    required this.comp,
-    required this.onNameChanged,
-    required this.onEditRules,
-    required this.onDelete,
-  });
-
-  @override
-  State<_DynamicEditor> createState() => _DynamicEditorState();
-}
-
-class _DynamicEditorState extends State<_DynamicEditor> {
-  late TextEditingController name;
-
-  @override
-  void initState() {
-    super.initState();
-    name = TextEditingController(text: widget.comp.name);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: name,
-                decoration: const InputDecoration(labelText: 'Name'),
-                onChanged: widget.onNameChanged,
-              ),
-            ),
-            TextButton(
-              onPressed: widget.onEditRules,
-              child: const Text('Edit Rules'),
-            ),
-            IconButton(
-              onPressed: widget.onDelete,
-              icon: const Icon(Icons.delete),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    name.dispose();
     super.dispose();
   }
 }

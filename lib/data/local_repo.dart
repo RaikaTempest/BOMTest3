@@ -20,6 +20,10 @@ class LocalStandardsRepo implements StandardsRepo {
     if (!await parametersFile.exists()) {
       await parametersFile.writeAsString(jsonEncode(<dynamic>[]), flush: true);
     }
+    final dynamicComponentsFile = File('${root.path}/dynamic_components.json');
+    if (!await dynamicComponentsFile.exists()) {
+      await dynamicComponentsFile.writeAsString(jsonEncode(<dynamic>[]), flush: true);
+    }
     _root = root;
     return root;
   }
@@ -32,6 +36,11 @@ class LocalStandardsRepo implements StandardsRepo {
   Future<File> _parametersFile() async {
     final r = await _ensureRoot();
     return File('${r.path}/parameters.json');
+  }
+
+  Future<File> _dynamicComponentsFile() async {
+    final r = await _ensureRoot();
+    return File('${r.path}/dynamic_components.json');
   }
 
   Future<File> _pendingFile(String key) async {
@@ -96,6 +105,36 @@ class LocalStandardsRepo implements StandardsRepo {
     final tmp = File('${f.path}.tmp');
     await tmp.writeAsString(
       jsonEncode(parameters.map((e) => e.toJson()).toList()),
+      flush: true,
+    );
+    await tmp.rename(f.path);
+  }
+
+  @override
+  Future<List<DynamicComponentDef>> loadGlobalDynamicComponents() async {
+    final f = await _dynamicComponentsFile();
+    final txt = await f.readAsString();
+    if (txt.trim().isEmpty) return [];
+    final j = jsonDecode(txt);
+    if (j is List) {
+      return j
+          .whereType<Map>()
+          .map(
+            (e) =>
+                DynamicComponentDef.fromJson((e as Map).cast<String, dynamic>()),
+          )
+          .toList();
+    }
+    return [];
+  }
+
+  @override
+  Future<void> saveGlobalDynamicComponents(
+      List<DynamicComponentDef> components) async {
+    final f = await _dynamicComponentsFile();
+    final tmp = File('${f.path}.tmp');
+    await tmp.writeAsString(
+      jsonEncode(components.map((e) => e.toJson()).toList()),
       flush: true,
     );
     await tmp.rename(f.path);
