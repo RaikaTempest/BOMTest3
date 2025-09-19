@@ -3,13 +3,11 @@ import 'package:flutter/material.dart';
 import '../core/models.dart';
 
 class RuleWizard extends StatefulWidget {
-  final DynamicComponentDef parent;
   final RuleDef? existing;
   final List<ParameterDef> parameters;
 
   const RuleWizard({
     super.key,
-    required this.parent,
     this.existing,
     required this.parameters,
   });
@@ -269,21 +267,8 @@ class _RuleWizardState extends State<RuleWizard> {
         priority: int.tryParse(priority.text) ?? 0,
       );
 
-      final existing = widget.existing;
-      final rules = widget.parent.rules;
-      if (existing != null) {
-        final index = rules.indexOf(existing);
-        if (index >= 0) {
-          rules[index] = rule;
-        } else {
-          rules.add(rule);
-        }
-      } else {
-        rules.add(rule);
-      }
-
       if (!mounted) return;
-      Navigator.of(context).pop(widget.parent);
+      Navigator.of(context).pop(rule);
     } catch (e) {
       if (!mounted) return;
 
