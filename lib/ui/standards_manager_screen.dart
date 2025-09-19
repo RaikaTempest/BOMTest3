@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/models.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
-import 'rule_wizard.dart';
+import 'dynamic_component_rules_screen.dart';
 import 'widgets/parameter_editor.dart';
 
 class StandardsManagerScreen extends StatefulWidget {
@@ -199,17 +199,17 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     });
   }
 
-  Future<void> _openRuleWizard(int index) async {
+  Future<void> _openRulesManager(int index) async {
     try {
       final updated = await Navigator.of(context).push<DynamicComponentDef>(
         MaterialPageRoute(
-          builder:
-              (_) => RuleWizard(
-                parent: dynamicComponents[index],
-                parameters: parameters,
-              ),
+          builder: (_) => DynamicComponentRulesScreen(
+            component: dynamicComponents[index],
+            parameters: parameters,
+          ),
         ),
       );
+      if (!mounted) return;
       setState(() {
         if (updated != null) {
           dynamicComponents[index] = updated;
@@ -413,7 +413,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                             rules: old.rules,
                           );
                         }),
-                    onEditRules: () => _openRuleWizard(e.key),
+                    onEditRules: () => _openRulesManager(e.key),
                     onDelete:
                         () => setState(() {
                           dynamicComponents.removeAt(e.key);
