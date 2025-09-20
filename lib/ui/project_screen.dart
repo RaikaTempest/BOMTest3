@@ -69,7 +69,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
   }
 
   Future<void> _openStandards(int index) async {
-    final repo = createRepo();
+    final repo = await createRepo();
     final allStds = await repo.listStandards();
     final result = await Navigator.of(context).push<Map<String, dynamic>>(
       MaterialPageRoute(
@@ -236,7 +236,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
   }
 
   Future<void> _exportCsv() async {
-    final repo = createRepo();
+    final repo = await createRepo();
     final standards = await repo.listStandards();
     final exporter = BomExporter();
     final csv = exporter.buildCsv(locations, standards);
@@ -407,7 +407,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const StandardsManagerScreen()),
     );
-    final repo = createRepo();
+    final repo = await createRepo();
     final list = await repo.listStandards();
     setState(() => available = list);
   }

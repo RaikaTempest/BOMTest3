@@ -4,14 +4,43 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import '../core/models.dart';
 import 'repo.dart';
+import 'repo_location_store.dart';
 
 class LocalStandardsRepo implements StandardsRepo {
-  Directory? _root;
+  LocalStandardsRepo({
+    String? overrideRootPath,
+    RepoLocationStore? locationStore,
+  })  : _locationStore = locationStore ?? RepoLocationStore.instance,
+        _overridePath = overrideRootPath {
+    _locationStore.changes.listen((path) {
+      _overridePath = path;
+      if (_currentPath != path) {
+        _currentPath = null;
+        _root = null;
+      }
+    });
+  }
 
-  Future<Directory> _ensureRoot() async {
-    if (_root != null) return _root!;
+  final RepoLocationStore _locationStore;
+  Directory? _root;
+  String? _overridePath;
+  String? _currentPath;
+
+  Future<String> _resolveActiveRootPath() async {
+    final override = _overridePath;
+    if (override != null && override.trim().isNotEmpty) {
+      return override;
+    }
+    final stored = await _locationStore.loadPreferredRoot();
+    if (stored != null && stored.trim().isNotEmpty) {
+      _overridePath = stored;
+      return stored;
+    }
     final dir = await getApplicationDocumentsDirectory();
-    final root = Directory('${dir.path}/bom_data');
+    return '${dir.path}/bom_data';
+  }
+
+  Future<void> _bootstrapRoot(Directory root) async {
     await root.create(recursive: true);
     for (final sub in ['standards', 'cache/pending', 'cache/approved']) {
       await Directory('${root.path}/$sub').create(recursive: true);
@@ -24,7 +53,17 @@ class LocalStandardsRepo implements StandardsRepo {
     if (!await dynamicComponentsFile.exists()) {
       await dynamicComponentsFile.writeAsString(jsonEncode(<dynamic>[]), flush: true);
     }
+  }
+
+  Future<Directory> _ensureRoot() async {
+    final path = await _resolveActiveRootPath();
+    if (_root != null && _currentPath == path) {
+      return _root!;
+    }
+    final root = Directory(path);
+    await _bootstrapRoot(root);
     _root = root;
+    _currentPath = path;
     return root;
   }
 
