@@ -6,6 +6,7 @@ import '../core/models.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
 import 'dynamic_component_rules_screen.dart';
+import 'dialogs.dart';
 import 'widgets/dynamic_component_editor.dart';
 import 'widgets/parameter_editor.dart';
 
@@ -44,6 +45,44 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
     );
     if (changed == true) {
       _refresh();
+    }
+  }
+
+  Future<void> _deleteStandard(StandardDef std) async {
+    final firstConfirm = await showConfirmationDialog(
+      context,
+      title: 'Delete standard?',
+      message:
+          'This will permanently remove ${std.code} — ${std.name}. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      isDestructive: true,
+    );
+    if (!firstConfirm) return;
+
+    final secondConfirm = await showTextConfirmationDialog(
+      context,
+      title: 'Confirm deletion',
+      message:
+          'Type the standard code to confirm. Deleting a standard cannot be undone.',
+      hintText: std.code,
+      expectedText: std.code,
+      confirmLabel: 'Delete',
+      isDestructive: true,
+    );
+    if (!secondConfirm) return;
+
+    try {
+      await repo.deleteStandard(std.code);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deleted standard ${std.code}.')),
+      );
+      await _refresh();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Delete error: $e')),
+      );
     }
   }
 
@@ -87,9 +126,20 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
                       final s = filteredStandards[i];
                       return ListTile(
                         title: Text('${s.code} — ${s.name}'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.edit),
-                          onPressed: () => _openDetail(s),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit),
+                              tooltip: 'Edit standard',
+                              onPressed: () => _openDetail(s),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              tooltip: 'Delete standard',
+                              onPressed: () => _deleteStandard(s),
+                            ),
+                          ],
                         ),
                       );
                     },
@@ -128,6 +178,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   bool _loadingGlobalParameters = true;
   List<DynamicComponentDef> globalDynamicComponents = [];
   bool _loadingGlobalDynamicComponents = true;
+  bool _dirty = false;
 
   String _createParameterId() => 'standard_param_${_nextParameterId++}';
 
@@ -182,6 +233,26 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   }
 
+  void _markDirty() {
+    if (!_dirty) {
+      setState(() {
+        _dirty = true;
+      });
+    }
+  }
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_dirty) return true;
+    return await showConfirmationDialog(
+      context,
+      title: 'Discard changes?',
+      message:
+          'You have unsaved changes for this standard. Leave without saving?',
+      confirmLabel: 'Discard',
+      isDestructive: true,
+    );
+  }
+
   Future<void> _loadGlobalParameters() async {
     try {
       final list = await widget.repo.loadGlobalParameters();
@@ -225,6 +296,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       parameters.add(ParameterDef(key: '', type: ParamType.text));
       _parameterIds.add(_createParameterId());
       _combineGlobalAndCurrent();
+      _dirty = true;
     });
   }
 
@@ -247,6 +319,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       parameters.add(_cloneParameter(selected));
       _parameterIds.add(_createParameterId());
       _combineGlobalAndCurrent();
+      _dirty = true;
     });
   }
 
@@ -271,6 +344,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       dynamicComponents.add(_cloneDynamicComponent(selected));
       _dynamicComponentIds.add(_createDynamicComponentId());
       _combineGlobalDynamicComponents();
+      _dirty = true;
     });
   }
 
@@ -443,14 +517,59 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     setState(() {
       parameters[index] = def;
       _combineGlobalAndCurrent();
+      _dirty = true;
     });
   }
 
-  void _removeParameterAt(int index) {
+  Future<void> _removeParameterAt(int index) async {
+    final confirm = await showConfirmationDialog(
+      context,
+      title: 'Remove parameter?',
+      message: 'This parameter will be removed from the standard.',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirm) return;
+
     setState(() {
       parameters.removeAt(index);
       _parameterIds.removeAt(index);
       _combineGlobalAndCurrent();
+      _dirty = true;
+    });
+  }
+
+  Future<void> _removeStaticComponent(int index) async {
+    final confirm = await showConfirmationDialog(
+      context,
+      title: 'Remove static component?',
+      message: 'This component will be removed from the standard.',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirm) return;
+
+    setState(() {
+      staticComponents.removeAt(index);
+      _dirty = true;
+    });
+  }
+
+  Future<void> _removeDynamicComponent(int index) async {
+    final confirm = await showConfirmationDialog(
+      context,
+      title: 'Remove dynamic component?',
+      message: 'This component will be removed from the standard.',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirm) return;
+
+    setState(() {
+      dynamicComponents.removeAt(index);
+      _dynamicComponentIds.removeAt(index);
+      _combineGlobalDynamicComponents();
+      _dirty = true;
     });
   }
 
@@ -468,6 +587,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       setState(() {
         if (updated != null) {
           dynamicComponents[index] = updated;
+          _dirty = true;
         }
         _combineGlobalAndCurrent();
         _combineGlobalDynamicComponents();
@@ -485,6 +605,8 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     final e = widget.existing;
     code = TextEditingController(text: e?.code ?? '');
     name = TextEditingController(text: e?.name ?? '');
+    code.addListener(_markDirty);
+    name.addListener(_markDirty);
     parameters = e?.parameters.toList() ?? [];
     _resetParameterIds();
     staticComponents = e?.staticComponents.toList() ?? [];
@@ -497,6 +619,8 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
 
   @override
   void dispose() {
+    code.removeListener(_markDirty);
+    name.removeListener(_markDirty);
     code.dispose();
     name.dispose();
     super.dispose();
@@ -606,23 +730,26 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.existing == null ? 'Add Standard' : 'Edit Standard'),
-        actions: [
-          TextButton(
-            onPressed: _save,
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white,
-              backgroundColor: Theme.of(context).colorScheme.secondary,
+    return WillPopScope(
+      onWillPop: _confirmDiscardChanges,
+      child: Scaffold(
+        appBar: AppBar(
+          title:
+              Text(widget.existing == null ? 'Add Standard' : 'Edit Standard'),
+          actions: [
+            TextButton(
+              onPressed: _save,
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).colorScheme.secondary,
+              ),
+              child: const Text('Save'),
             ),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child: ListView(
+          ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(12),
+          child: ListView(
           children: [
             TextField(
               controller: code,
@@ -680,11 +807,9 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                     onChanged:
                         (c) => setState(() {
                           staticComponents[e.key] = c;
+                          _dirty = true;
                         }),
-                    onDelete:
-                        () => setState(() {
-                          staticComponents.removeAt(e.key);
-                        }),
+                    onDelete: () => _removeStaticComponent(e.key),
                   ),
                 )
                 .toList(),
@@ -692,6 +817,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
               onPressed:
                   () => setState(() {
                     staticComponents.add(StaticComponent(mm: '', qty: 1));
+                    _dirty = true;
                   }),
               icon: const Icon(Icons.add),
               label: const Text('Add Static Component'),
@@ -718,14 +844,10 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                         rules: old.rules,
                       );
                       _combineGlobalDynamicComponents();
+                      _dirty = true;
                     }),
                     onEditRules: () => _openRulesManager(e.key),
-                    onDelete:
-                        () => setState(() {
-                          dynamicComponents.removeAt(e.key);
-                          _dynamicComponentIds.removeAt(e.key);
-                          _combineGlobalDynamicComponents();
-                        }),
+                    onDelete: () => _removeDynamicComponent(e.key),
                   ),
                 )
                 .toList(),
@@ -739,6 +861,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                     );
                     _dynamicComponentIds.add(_createDynamicComponentId());
                     _combineGlobalDynamicComponents();
+                    _dirty = true;
                   }),
                   icon: const Icon(Icons.add),
                   label: const Text('New Dynamic Component'),
@@ -754,10 +877,10 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
             ),
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _save,
-        child: const Icon(Icons.save),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _save,
+          child: const Icon(Icons.save),
+        ),
       ),
     );
   }

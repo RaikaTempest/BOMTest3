@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
+import 'dialogs.dart';
 
 class RuleWizard extends StatefulWidget {
   final RuleDef? existing;
@@ -85,6 +86,22 @@ class _RuleWizardState extends State<RuleWizard> {
   late final TextEditingController priority;
   final List<_ConditionFields> _conditions = [];
   final List<_OutputFields> _outputs = [];
+  bool _dirty = false;
+
+  void _markDirty() {
+    _dirty = true;
+  }
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_dirty) return true;
+    return await showConfirmationDialog(
+      context,
+      title: 'Discard changes?',
+      message: 'You have unsaved changes to this rule. Leave without saving?',
+      confirmLabel: 'Discard',
+      isDestructive: true,
+    );
+  }
 
   @override
   void initState() {
@@ -92,6 +109,7 @@ class _RuleWizardState extends State<RuleWizard> {
     final e = widget.existing;
 
     priority = TextEditingController(text: e?.priority.toString() ?? '0');
+    priority.addListener(_markDirty);
 
     if (e != null) {
       _loadExpr(e.expr);
@@ -113,6 +131,7 @@ class _RuleWizardState extends State<RuleWizard> {
 
   @override
   void dispose() {
+    priority.removeListener(_markDirty);
     priority.dispose();
     for (final c in _conditions) {
       c.dispose();
@@ -126,24 +145,46 @@ class _RuleWizardState extends State<RuleWizard> {
   void _addCondition() {
     setState(() {
       _conditions.add(_ConditionFields());
+      _dirty = true;
     });
   }
 
-  void _removeCondition(int index) {
+  Future<void> _removeCondition(int index) async {
+    final confirm = await showConfirmationDialog(
+      context,
+      title: 'Remove condition?',
+      message: 'This condition will be removed from the rule.',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirm) return;
+
     setState(() {
       _conditions.removeAt(index);
+      _dirty = true;
     });
   }
 
   void _addOutput() {
     setState(() {
       _outputs.add(_OutputFields());
+      _dirty = true;
     });
   }
 
-  void _removeOutput(int index) {
+  Future<void> _removeOutput(int index) async {
+    final confirm = await showConfirmationDialog(
+      context,
+      title: 'Remove output?',
+      message: 'This output will be removed from the rule.',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirm) return;
+
     setState(() {
       _outputs.removeAt(index);
+      _dirty = true;
     });
   }
 
@@ -252,6 +293,7 @@ class _RuleWizardState extends State<RuleWizard> {
     if (result != null) {
       setState(() {
         widget.parameters.add(result);
+        _dirty = true;
       });
     }
   }
@@ -307,11 +349,15 @@ class _RuleWizardState extends State<RuleWizard> {
                   controller: controller,
                   focusNode: focusNode,
                   decoration: const InputDecoration(labelText: 'Param'),
-                  onChanged: (v) => f.param.text = v,
+                  onChanged: (v) {
+                    f.param.text = v;
+                    _markDirty();
+                  },
                 );
               },
               onSelected: (selection) {
                 f.param.text = selection;
+                _markDirty();
               },
             ),
           ),
@@ -328,6 +374,7 @@ class _RuleWizardState extends State<RuleWizard> {
               if (v != null) {
                 setState(() {
                   f.op = v;
+                  _dirty = true;
                 });
               }
             },
@@ -342,10 +389,13 @@ class _RuleWizardState extends State<RuleWizard> {
             child: TextField(
               controller: f.value,
               decoration: const InputDecoration(labelText: 'Value'),
+              onChanged: (_) => _markDirty(),
             ),
           ),
           IconButton(
-            onPressed: () => _removeCondition(index),
+            onPressed: () {
+              _removeCondition(index);
+            },
             icon: const Icon(Icons.delete),
           ),
         ],
@@ -363,6 +413,7 @@ class _RuleWizardState extends State<RuleWizard> {
             child: TextField(
               controller: f.mm,
               decoration: const InputDecoration(labelText: 'MM'),
+              onChanged: (_) => _markDirty(),
             ),
           ),
           const SizedBox(width: 8),
@@ -374,6 +425,7 @@ class _RuleWizardState extends State<RuleWizard> {
               decoration: const InputDecoration(labelText: 'Qty (optional)'),
 
               keyboardType: TextInputType.number,
+              onChanged: (_) => _markDirty(),
             ),
           ),
           const SizedBox(width: 8),
@@ -384,10 +436,13 @@ class _RuleWizardState extends State<RuleWizard> {
               decoration: const InputDecoration(
                 labelText: 'Qty Formula (optional)',
               ),
+              onChanged: (_) => _markDirty(),
             ),
           ),
           IconButton(
-            onPressed: () => _removeOutput(index),
+            onPressed: () {
+              _removeOutput(index);
+            },
             icon: const Icon(Icons.delete),
           ),
         ],
@@ -428,76 +483,79 @@ class _RuleWizardState extends State<RuleWizard> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.existing == null ? 'Add Rule' : 'Edit Rule'),
-        actions: [
-          TextButton(
-            onPressed: _save,
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white,
-              backgroundColor: Theme.of(context).colorScheme.secondary,
-            ),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child: ListView(
-          children: [
-            TextField(
-              controller: priority,
-              decoration: const InputDecoration(labelText: 'Priority'),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 8),
-            const Text('Variables'),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 8,
-              children:
-                  widget.parameters
-                      .map((e) => Chip(label: Text(e.key)))
-                      .toList(),
-            ),
-            TextButton.icon(
-              onPressed: _addParameterDialog,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Variable'),
-            ),
-            const SizedBox(height: 8),
-            const Text('Conditions'),
-            const SizedBox(height: 4),
-            ..._conditions
-                .asMap()
-                .entries
-                .map((e) => _buildCondition(e.value, e.key))
-                .toList(),
-            TextButton.icon(
-              onPressed: _addCondition,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Condition'),
-            ),
-            const SizedBox(height: 8),
-            const Text('Outputs'),
-            const SizedBox(height: 4),
-            ..._outputs
-                .asMap()
-                .entries
-                .map((e) => _buildOutput(e.value, e.key))
-                .toList(),
-            TextButton.icon(
-              onPressed: _addOutput,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Output'),
+    return WillPopScope(
+      onWillPop: _confirmDiscardChanges,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(widget.existing == null ? 'Add Rule' : 'Edit Rule'),
+          actions: [
+            TextButton(
+              onPressed: _save,
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).colorScheme.secondary,
+              ),
+              child: const Text('Save'),
             ),
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _save,
-        child: const Icon(Icons.save),
+        body: Padding(
+          padding: const EdgeInsets.all(12),
+          child: ListView(
+            children: [
+              TextField(
+                controller: priority,
+                decoration: const InputDecoration(labelText: 'Priority'),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 8),
+              const Text('Variables'),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 8,
+                children:
+                    widget.parameters
+                        .map((e) => Chip(label: Text(e.key)))
+                        .toList(),
+              ),
+              TextButton.icon(
+                onPressed: _addParameterDialog,
+                icon: const Icon(Icons.add),
+                label: const Text('Add Variable'),
+              ),
+              const SizedBox(height: 8),
+              const Text('Conditions'),
+              const SizedBox(height: 4),
+              ..._conditions
+                  .asMap()
+                  .entries
+                  .map((e) => _buildCondition(e.value, e.key))
+                  .toList(),
+              TextButton.icon(
+                onPressed: _addCondition,
+                icon: const Icon(Icons.add),
+                label: const Text('Add Condition'),
+              ),
+              const SizedBox(height: 8),
+              const Text('Outputs'),
+              const SizedBox(height: 4),
+              ..._outputs
+                  .asMap()
+                  .entries
+                  .map((e) => _buildOutput(e.value, e.key))
+                  .toList(),
+              TextButton.icon(
+                onPressed: _addOutput,
+                icon: const Icon(Icons.add),
+                label: const Text('Add Output'),
+              ),
+            ],
+          ),
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _save,
+          child: const Icon(Icons.save),
+        ),
       ),
     );
   }

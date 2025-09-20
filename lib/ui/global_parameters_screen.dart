@@ -6,6 +6,7 @@ import '../data/repo_factory.dart';
 import 'widgets/bom_scaffold.dart';
 import 'widgets/glass_container.dart';
 import 'widgets/parameter_editor.dart';
+import 'dialogs.dart';
 
 class GlobalParametersScreen extends StatefulWidget {
   const GlobalParametersScreen({super.key});
@@ -21,6 +22,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
   int _nextParameterId = 0;
   bool _loading = true;
   String _searchQuery = '';
+  bool _dirty = false;
 
   String _createParameterId() => 'global_param_${_nextParameterId++}';
 
@@ -29,6 +31,18 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
     _parameterIds
       ..clear()
       ..addAll(List.generate(parameters.length, (_) => _createParameterId()));
+  }
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_dirty) return true;
+    return await showConfirmationDialog(
+      context,
+      title: 'Discard changes?',
+      message:
+          'You have unsaved changes to global parameters. Leave without saving?',
+      confirmLabel: 'Discard',
+      isDestructive: true,
+    );
   }
 
   @override
@@ -45,12 +59,14 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
         parameters = list;
         _resetParameterIds();
         _loading = false;
+        _dirty = false;
       });
     } catch (_) {
       setState(() {
         parameters = [];
         _resetParameterIds();
         _loading = false;
+        _dirty = false;
       });
     }
   }
@@ -58,13 +74,24 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
   void _onParameterChanged(int index, ParameterDef def) {
     setState(() {
       parameters[index] = def;
+      _dirty = true;
     });
   }
 
-  void _removeParameter(int index) {
+  Future<void> _removeParameter(int index) async {
+    final confirm = await showConfirmationDialog(
+      context,
+      title: 'Remove parameter?',
+      message: 'This global parameter will be deleted.',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirm) return;
+
     setState(() {
       parameters.removeAt(index);
       _parameterIds.removeAt(index);
+      _dirty = true;
     });
   }
 
@@ -72,6 +99,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
     setState(() {
       parameters.add(ParameterDef(key: '', type: ParamType.text));
       _parameterIds.add(_createParameterId());
+      _dirty = true;
     });
   }
 
@@ -109,6 +137,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
       setState(() {
         parameters = List<ParameterDef>.from(cleaned);
         _resetParameterIds();
+        _dirty = false;
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -135,99 +164,103 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
               : entry.value.key.toLowerCase().contains(query),
         )
         .toList();
-    return BomScaffold(
-      appBar: AppBar(
-        title: const Text('Global Parameters'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 24),
-            child: FilledButton.icon(
-              onPressed: _save,
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('Save changes'),
+    return WillPopScope(
+      onWillPop: _confirmDiscardChanges,
+      child: BomScaffold(
+        appBar: AppBar(
+          title: const Text('Global Parameters'),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 24),
+              child: FilledButton.icon(
+                onPressed: _save,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Save changes'),
+              ),
             ),
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : parameters.isEmpty
-              ? Center(
-                  child: GlassContainer(
-                    margin: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.tune,
-                            size: 46, color: theme.colorScheme.secondary),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No parameters defined yet',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
+          ],
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : parameters.isEmpty
+                ? Center(
+                    child: GlassContainer(
+                      margin: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.tune,
+                              size: 46, color: theme.colorScheme.secondary),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No parameters defined yet',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Create your global parameters to reuse them across every project.',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium
+                                ?.copyWith(color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
+                    child: Column(
+                      children: [
+                        TextField(
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.search),
+                            hintText: 'Search parameters',
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) {
+                            setState(() {
+                              _searchQuery = value;
+                            });
+                          },
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Create your global parameters to reuse them across every project.',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(color: Colors.white70),
+                        const SizedBox(height: 16),
+                        Expanded(
+                          child: filteredEntries.isEmpty
+                              ? const Center(
+                                  child:
+                                      Text('No parameters match your search.'),
+                                )
+                              : ListView.builder(
+                                  itemCount: filteredEntries.length,
+                                  itemBuilder: (context, index) {
+                                    final entry = filteredEntries[index];
+                                    return GlassContainer(
+                                      margin: const EdgeInsets.symmetric(
+                                          vertical: 12),
+                                      child: ParameterEditor(
+                                        key: ValueKey(
+                                          _parameterIds[entry.key],
+                                        ),
+                                        def: entry.value,
+                                        onChanged: (p) =>
+                                            _onParameterChanged(entry.key, p),
+                                        onDelete:
+                                            () => _removeParameter(entry.key),
+                                      ),
+                                    );
+                                  },
+                                ),
                         ),
                       ],
                     ),
                   ),
-                )
-              : Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-                  child: Column(
-                    children: [
-                      TextField(
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search),
-                          hintText: 'Search parameters',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      Expanded(
-                        child: filteredEntries.isEmpty
-                            ? const Center(
-                                child:
-                                    Text('No parameters match your search.'),
-                              )
-                            : ListView.builder(
-                                itemCount: filteredEntries.length,
-                                itemBuilder: (context, index) {
-                                  final entry = filteredEntries[index];
-                                  return GlassContainer(
-                                    margin:
-                                        const EdgeInsets.symmetric(vertical: 12),
-                                    child: ParameterEditor(
-                                      key: ValueKey(
-                                        _parameterIds[entry.key],
-                                      ),
-                                      def: entry.value,
-                                      onChanged: (p) =>
-                                          _onParameterChanged(entry.key, p),
-                                      onDelete: () => _removeParameter(entry.key),
-                                    ),
-                                  );
-                                },
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addParameter,
-        icon: const Icon(Icons.add),
-        label: const Text('Add parameter'),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _addParameter,
+          icon: const Icon(Icons.add),
+          label: const Text('Add parameter'),
+        ),
       ),
     );
   }
