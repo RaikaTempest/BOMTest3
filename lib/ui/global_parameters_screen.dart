@@ -20,6 +20,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
   final List<String> _parameterIds = [];
   int _nextParameterId = 0;
   bool _loading = true;
+  String _searchQuery = '';
 
   String _createParameterId() => 'global_param_${_nextParameterId++}';
 
@@ -124,6 +125,16 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final query = _searchQuery.trim().toLowerCase();
+    final filteredEntries = parameters
+        .asMap()
+        .entries
+        .where(
+          (entry) => query.isEmpty
+              ? true
+              : entry.value.key.toLowerCase().contains(query),
+        )
+        .toList();
     return BomScaffold(
       appBar: AppBar(
         title: const Text('Global Parameters'),
@@ -169,20 +180,48 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
                 )
               : Padding(
                   padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-                  child: ListView.builder(
-                    itemCount: parameters.length,
-                    itemBuilder: (context, index) {
-                      final def = parameters[index];
-                      return GlassContainer(
-                        margin: const EdgeInsets.symmetric(vertical: 12),
-                        child: ParameterEditor(
-                          key: ValueKey(_parameterIds[index]),
-                          def: def,
-                          onChanged: (p) => _onParameterChanged(index, p),
-                          onDelete: () => _removeParameter(index),
+                  child: Column(
+                    children: [
+                      TextField(
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search),
+                          hintText: 'Search parameters',
+                          border: OutlineInputBorder(),
                         ),
-                      );
-                    },
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: filteredEntries.isEmpty
+                            ? const Center(
+                                child:
+                                    Text('No parameters match your search.'),
+                              )
+                            : ListView.builder(
+                                itemCount: filteredEntries.length,
+                                itemBuilder: (context, index) {
+                                  final entry = filteredEntries[index];
+                                  return GlassContainer(
+                                    margin:
+                                        const EdgeInsets.symmetric(vertical: 12),
+                                    child: ParameterEditor(
+                                      key: ValueKey(
+                                        _parameterIds[entry.key],
+                                      ),
+                                      def: entry.value,
+                                      onChanged: (p) =>
+                                          _onParameterChanged(entry.key, p),
+                                      onDelete: () => _removeParameter(entry.key),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
                   ),
                 ),
       floatingActionButton: FloatingActionButton.extended(

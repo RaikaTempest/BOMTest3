@@ -22,6 +22,7 @@ class _GlobalDynamicComponentsScreenState
   int _nextComponentId = 0;
   bool _loading = true;
   List<ParameterDef> parameters = [];
+  String _searchQuery = '';
 
   String _createComponentId() => 'global_dynamic_${_nextComponentId++}';
 
@@ -192,6 +193,16 @@ class _GlobalDynamicComponentsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final query = _searchQuery.trim().toLowerCase();
+    final filteredEntries = components
+        .asMap()
+        .entries
+        .where(
+          (entry) => query.isEmpty
+              ? true
+              : entry.value.name.toLowerCase().contains(query),
+        )
+        .toList();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Global Dynamic Components'),
@@ -214,24 +225,46 @@ class _GlobalDynamicComponentsScreenState
                 )
               : Padding(
                   padding: const EdgeInsets.all(12),
-                  child: ListView(
+                  child: Column(
                     children: [
-                      ...components
-                          .asMap()
-                          .entries
-                          .map(
-                            (e) => DynamicComponentEditor(
-                              key: ValueKey(_componentIds[e.key]),
-                              comp: e.value,
-                              onNameChanged: (value) => _onNameChanged(
-                                e.key,
-                                value,
+                      TextField(
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search),
+                          hintText: 'Search dynamic components',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: filteredEntries.isEmpty
+                            ? const Center(
+                                child: Text(
+                                    'No dynamic components match your search.'),
+                              )
+                            : ListView.builder(
+                                itemCount: filteredEntries.length,
+                                itemBuilder: (context, index) {
+                                  final entry = filteredEntries[index];
+                                  return DynamicComponentEditor(
+                                    key: ValueKey(
+                                      _componentIds[entry.key],
+                                    ),
+                                    comp: entry.value,
+                                    onNameChanged: (value) => _onNameChanged(
+                                      entry.key,
+                                      value,
+                                    ),
+                                    onEditRules: () => _editRules(entry.key),
+                                    onDelete: () => _removeComponent(entry.key),
+                                  );
+                                },
                               ),
-                              onEditRules: () => _editRules(e.key),
-                              onDelete: () => _removeComponent(e.key),
-                            ),
-                          )
-                          .toList(),
+                      ),
                     ],
                   ),
                 ),
