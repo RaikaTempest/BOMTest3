@@ -1,9 +1,14 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../core/models.dart';
 import '../data/project_repo.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
+import '../data/repo_location_store.dart';
 import 'global_dynamic_components_screen.dart';
 import 'global_parameters_screen.dart';
 import 'project_screen.dart';
@@ -56,6 +61,10 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
           actions: const [
+            Padding(
+              padding: EdgeInsets.only(right: 12),
+              child: _RepoLocationButton(),
+            ),
             Padding(
               padding: EdgeInsets.only(right: 24),
               child: _GuideButton(),
@@ -126,17 +135,22 @@ class _JobTab extends StatefulWidget {
 }
 
 class _JobTabState extends State<_JobTab> {
-  late final StandardsRepo repo;
-  Future<List<StandardDef>>? _future;
+  StandardsRepo? repo;
+  late Future<List<StandardDef>> _future;
 
   @override
   void initState() {
     super.initState();
-    repo = createRepo();
-    _future = _loadOrSeed();
+    _future = _initialize();
   }
 
-  Future<List<StandardDef>> _loadOrSeed() async {
+  Future<List<StandardDef>> _initialize() async {
+    final loadedRepo = await createRepo();
+    repo = loadedRepo;
+    return _loadOrSeed(loadedRepo);
+  }
+
+  Future<List<StandardDef>> _loadOrSeed(StandardsRepo repo) async {
     var list = await repo.listStandards();
     if (list.isEmpty) {
       final std = StandardDef(
@@ -477,6 +491,149 @@ class _JobTabState extends State<_JobTab> {
         ),
       ),
     );
+  }
+}
+
+class _RepoLocationButton extends StatefulWidget {
+  const _RepoLocationButton();
+
+  @override
+  State<_RepoLocationButton> createState() => _RepoLocationButtonState();
+}
+
+class _RepoLocationButtonState extends State<_RepoLocationButton> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final foregroundColor = Colors.white.withOpacity(0.85);
+    return TextButton(
+      onPressed: _busy ? null : _selectFolder,
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: Colors.white.withOpacity(0.05),
+        foregroundColor: foregroundColor,
+      ).copyWith(
+        side: MaterialStateProperty.all(
+          BorderSide(color: Colors.white.withOpacity(0.15)),
+        ),
+        overlayColor: MaterialStateProperty.all(
+          theme.colorScheme.primary.withOpacity(0.12),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_busy)
+            const SizedBox(
+              height: 18,
+              width: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color?>(Colors.white),
+              ),
+            )
+          else
+            Icon(Icons.folder_open, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            _busy ? 'Updating…' : 'Change data folder',
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: foregroundColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _selectFolder() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final selection = await getDirectoryPath();
+      if (selection == null) {
+        return;
+      }
+
+      final Directory targetDir = Directory(selection);
+      final Directory absoluteTarget = targetDir.absolute;
+      await absoluteTarget.create(recursive: true);
+      final selectedPath = absoluteTarget.path;
+
+      final store = RepoLocationStore.instance;
+      final currentRoot = await store.resolveRootPath();
+      final normalizedCurrent = Directory(currentRoot).absolute.path;
+      if (p.equals(normalizedCurrent, selectedPath)) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Selected folder is already in use.')),
+        );
+        return;
+      }
+
+      final bool targetEmpty = await _isDirectoryEmpty(absoluteTarget);
+      var migrated = false;
+      if (targetEmpty) {
+        final sourceDir = Directory(normalizedCurrent);
+        if (await sourceDir.exists()) {
+          await _copyDirectory(sourceDir, absoluteTarget);
+          migrated = true;
+        }
+      }
+
+      await store.setPreferredRoot(selectedPath);
+      if (!mounted) return;
+      final buffer = StringBuffer('Standards location updated. ');
+      if (migrated) {
+        buffer.write('Copied existing files to the selected folder. ');
+      } else if (!targetEmpty) {
+        buffer.write('Kept existing files already in the selected folder. ');
+      }
+      buffer.write('Restart or reload the app to load data from the new path.');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(buffer.toString())),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update data folder: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<bool> _isDirectoryEmpty(Directory dir) async {
+    try {
+      if (!await dir.exists()) {
+        return true;
+      }
+      return await dir.list(followLinks: false).isEmpty;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<void> _copyDirectory(Directory source, Directory destination) async {
+    await for (final entity
+        in source.list(recursive: true, followLinks: false)) {
+      final relative = p.relative(entity.path, from: source.path);
+      if (relative.isEmpty) {
+        continue;
+      }
+      final newPath = p.join(destination.path, relative);
+      if (entity is File) {
+        await File(newPath).parent.create(recursive: true);
+        await entity.copy(newPath);
+      } else if (entity is Directory) {
+        await Directory(newPath).create(recursive: true);
+      }
+    }
   }
 }
 

@@ -16,7 +16,7 @@ class GlobalDynamicComponentsScreen extends StatefulWidget {
 
 class _GlobalDynamicComponentsScreenState
     extends State<GlobalDynamicComponentsScreen> {
-  late final StandardsRepo repo;
+  StandardsRepo? repo;
   List<DynamicComponentDef> components = [];
   final List<String> _componentIds = [];
   int _nextComponentId = 0;
@@ -38,16 +38,17 @@ class _GlobalDynamicComponentsScreenState
   @override
   void initState() {
     super.initState();
-    repo = createRepo();
-    _load();
+    _initRepo();
   }
 
-  Future<void> _load() async {
+  Future<void> _initRepo() async {
     try {
-      final loadedComponents = await repo.loadGlobalDynamicComponents();
-      final loadedParameters = await repo.loadGlobalParameters();
+      final loadedRepo = await createRepo();
+      final loadedComponents = await loadedRepo.loadGlobalDynamicComponents();
+      final loadedParameters = await loadedRepo.loadGlobalParameters();
       if (!mounted) return;
       setState(() {
+        repo = loadedRepo;
         components = loadedComponents;
         parameters = loadedParameters;
         _resetIds();
@@ -56,6 +57,7 @@ class _GlobalDynamicComponentsScreenState
     } catch (_) {
       if (!mounted) return;
       setState(() {
+        repo = null;
         components = [];
         parameters = [];
         _resetIds();
@@ -127,6 +129,8 @@ class _GlobalDynamicComponentsScreenState
 
   Future<void> _save() async {
     try {
+      final repo = this.repo;
+      if (repo == null) return;
       final cleaned = <DynamicComponentDef>[];
       final seenNames = <String>{};
       for (final c in components) {
@@ -193,6 +197,7 @@ class _GlobalDynamicComponentsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final repo = this.repo;
     final query = _searchQuery.trim().toLowerCase();
     final filteredEntries = components
         .asMap()
@@ -208,7 +213,7 @@ class _GlobalDynamicComponentsScreenState
         title: const Text('Global Dynamic Components'),
         actions: [
           TextButton(
-            onPressed: _save,
+            onPressed: repo == null ? null : _save,
             style: TextButton.styleFrom(
               foregroundColor: Colors.white,
               backgroundColor: Theme.of(context).colorScheme.secondary,
@@ -219,11 +224,13 @@ class _GlobalDynamicComponentsScreenState
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : components.isEmpty
-              ? const Center(
-                  child: Text('No dynamic components defined yet.'),
-                )
-              : Padding(
+          : repo == null
+              ? const Center(child: Text('Failed to load repository.'))
+              : components.isEmpty
+                  ? const Center(
+                      child: Text('No dynamic components defined yet.'),
+                    )
+                  : Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     children: [
@@ -269,7 +276,7 @@ class _GlobalDynamicComponentsScreenState
                   ),
                 ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _addComponent,
+        onPressed: repo == null ? null : _addComponent,
         child: const Icon(Icons.add),
       ),
     );

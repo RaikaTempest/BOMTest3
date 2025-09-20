@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../core/models.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
+import '../data/repo_location_store.dart';
 
 class DebugRepoScreen extends StatefulWidget {
   const DebugRepoScreen({super.key});
@@ -12,7 +13,7 @@ class DebugRepoScreen extends StatefulWidget {
 }
 
 class _DebugRepoScreenState extends State<DebugRepoScreen> {
-  final StandardsRepo repo = createRepo();
+  StandardsRepo? repo;
   String location = kIsWeb ? 'web localStorage' : '(see below)';
   List<StandardDef> items = [];
   String dump = '';
@@ -20,24 +21,48 @@ class _DebugRepoScreenState extends State<DebugRepoScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _initRepo();
+  }
+
+  Future<void> _initRepo() async {
+    final loaded = await createRepo();
+    final loc = await _resolveLocation();
+    final list = await loaded.listStandards();
+    if (!mounted) return;
+    setState(() {
+      repo = loaded;
+      location = loc;
+      items = list;
+      dump = const JsonEncoder.withIndent('  ')
+          .convert(list.map((s) => s.toJson()).toList());
+    });
+  }
+
+  Future<String> _resolveLocation() async {
+    if (kIsWeb) {
+      return 'web localStorage';
+    }
+    final store = RepoLocationStore.instance;
+    return await store.resolveRootPath();
   }
 
   Future<void> _load() async {
-    // Try to get a hint for Windows/macOS/Linux
-    if (!kIsWeb) {
-      location = 'App Documents/bom_data (platform-specific path)';
-    }
+    final repo = this.repo;
+    if (repo == null) return;
+    final loc = await _resolveLocation();
     final list = await repo.listStandards();
+    if (!mounted) return;
     setState(() {
+      location = loc;
       items = list;
-      dump = const JsonEncoder.withIndent('  ').convert(
-        list.map((s) => s.toJson()).toList(),
-      );
+      dump = const JsonEncoder.withIndent('  ')
+          .convert(list.map((s) => s.toJson()).toList());
     });
   }
 
   Future<void> _resetSeed() async {
+    final repo = this.repo;
+    if (repo == null) return;
     // force overwrite FS12 with the known-good demo
     final std = StandardDef(
       code: 'FS12',
@@ -74,9 +99,15 @@ class _DebugRepoScreenState extends State<DebugRepoScreen> {
             const SizedBox(height: 8),
             Row(
               children: [
-                ElevatedButton(onPressed: _load, child: const Text('Reload')),
+                ElevatedButton(
+                  onPressed: repo == null ? null : _load,
+                  child: const Text('Reload'),
+                ),
                 const SizedBox(width: 8),
-                ElevatedButton(onPressed: _resetSeed, child: const Text('Reset demo FS12')),
+                ElevatedButton(
+                  onPressed: repo == null ? null : _resetSeed,
+                  child: const Text('Reset demo FS12'),
+                ),
               ],
             ),
             const Divider(height: 24),

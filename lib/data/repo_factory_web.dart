@@ -2,4 +2,4 @@
 import 'repo.dart';
 import 'web_repo.dart';
 
-StandardsRepo getRepo() => WebStandardsRepo();
+Future<StandardsRepo> getRepo() async => WebStandardsRepo();

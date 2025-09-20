@@ -17,26 +17,48 @@ class StandardsManagerScreen extends StatefulWidget {
 }
 
 class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
-  late final StandardsRepo repo;
+  StandardsRepo? repo;
   List<StandardDef> standards = [];
   String _searchQuery = '';
+  bool _loadingRepo = true;
 
   @override
   void initState() {
     super.initState();
-    repo = createRepo();
-    // Load existing standards.
-    repo.listStandards().then((list) {
-      setState(() => standards = list);
-    });
+    _initRepo();
+  }
+
+  Future<void> _initRepo() async {
+    try {
+      final loadedRepo = await createRepo();
+      final list = await loadedRepo.listStandards();
+      if (!mounted) return;
+      setState(() {
+        repo = loadedRepo;
+        standards = list;
+        _loadingRepo = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        repo = null;
+        standards = [];
+        _loadingRepo = false;
+      });
+    }
   }
 
   Future<void> _refresh() async {
+    final repo = this.repo;
+    if (repo == null) return;
     final list = await repo.listStandards();
+    if (!mounted) return;
     setState(() => standards = list);
   }
 
   Future<void> _openDetail([StandardDef? std]) async {
+    final repo = this.repo;
+    if (repo == null) return;
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => _StandardDetailScreen(repo: repo, existing: std),
@@ -48,6 +70,8 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
   }
 
   Future<void> _confirmDelete(StandardDef std) async {
+    final repo = this.repo;
+    if (repo == null) return;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -78,6 +102,19 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final repo = this.repo;
+    if (_loadingRepo) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Standards')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (repo == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Standards')),
+        body: const Center(child: Text('Failed to load repository.')),
+      );
+    }
     final query = _searchQuery.trim().toLowerCase();
     final filteredStandards = query.isEmpty
         ? standards
@@ -138,7 +175,7 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _openDetail(),
+        onPressed: _openDetail,
         child: const Icon(Icons.add),
       ),
     );

@@ -15,7 +15,7 @@ class GlobalParametersScreen extends StatefulWidget {
 }
 
 class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
-  late final StandardsRepo repo;
+  StandardsRepo? repo;
   List<ParameterDef> parameters = [];
   final List<String> _parameterIds = [];
   int _nextParameterId = 0;
@@ -34,20 +34,24 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
   @override
   void initState() {
     super.initState();
-    repo = createRepo();
-    _load();
+    _initRepo();
   }
 
-  Future<void> _load() async {
+  Future<void> _initRepo() async {
     try {
-      final list = await repo.loadGlobalParameters();
+      final loadedRepo = await createRepo();
+      final list = await loadedRepo.loadGlobalParameters();
+      if (!mounted) return;
       setState(() {
+        repo = loadedRepo;
         parameters = list;
         _resetParameterIds();
         _loading = false;
       });
     } catch (_) {
+      if (!mounted) return;
       setState(() {
+        repo = null;
         parameters = [];
         _resetParameterIds();
         _loading = false;
@@ -77,6 +81,8 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
 
   Future<void> _save() async {
     try {
+      final repo = this.repo;
+      if (repo == null) return;
       final cleaned = <ParameterDef>[];
       final seen = <String>{};
       for (final p in parameters) {
@@ -125,6 +131,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final repo = this.repo;
     final query = _searchQuery.trim().toLowerCase();
     final filteredEntries = parameters
         .asMap()
@@ -142,7 +149,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 24),
             child: FilledButton.icon(
-              onPressed: _save,
+              onPressed: repo == null ? null : _save,
               icon: const Icon(Icons.save_outlined),
               label: const Text('Save changes'),
             ),
@@ -151,34 +158,36 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : parameters.isEmpty
-              ? Center(
-                  child: GlassContainer(
-                    margin: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.tune,
-                            size: 46, color: theme.colorScheme.secondary),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No parameters defined yet',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+          : repo == null
+              ? const Center(child: Text('Failed to load repository.'))
+              : parameters.isEmpty
+                  ? Center(
+                      child: GlassContainer(
+                        margin: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.tune,
+                                size: 46, color: theme.colorScheme.secondary),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No parameters defined yet',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Create your global parameters to reuse them across every project.',
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodyMedium
+                                  ?.copyWith(color: Colors.white70),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Create your global parameters to reuse them across every project.',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : Padding(
+                      ),
+                    )
+                  : Padding(
                   padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
                   child: Column(
                     children: [
@@ -225,7 +234,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
                   ),
                 ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addParameter,
+        onPressed: repo == null ? null : _addParameter,
         icon: const Icon(Icons.add),
         label: const Text('Add parameter'),
       ),
