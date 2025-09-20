@@ -4,6 +4,7 @@ import '../core/models.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
 import 'dynamic_component_rules_screen.dart';
+import 'dialogs.dart';
 import 'widgets/dynamic_component_editor.dart';
 
 class GlobalDynamicComponentsScreen extends StatefulWidget {
@@ -23,6 +24,7 @@ class _GlobalDynamicComponentsScreenState
   bool _loading = true;
   List<ParameterDef> parameters = [];
   String _searchQuery = '';
+  bool _dirty = false;
 
   String _createComponentId() => 'global_dynamic_${_nextComponentId++}';
 
@@ -33,6 +35,18 @@ class _GlobalDynamicComponentsScreenState
       ..addAll(
         List.generate(components.length, (_) => _createComponentId()),
       );
+  }
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_dirty) return true;
+    return await showConfirmationDialog(
+      context,
+      title: 'Discard changes?',
+      message:
+          'You have unsaved changes to global dynamic components. Leave without saving?',
+      confirmLabel: 'Discard',
+      isDestructive: true,
+    );
   }
 
   @override
@@ -52,6 +66,7 @@ class _GlobalDynamicComponentsScreenState
         parameters = loadedParameters;
         _resetIds();
         _loading = false;
+        _dirty = false;
       });
     } catch (_) {
       if (!mounted) return;
@@ -60,6 +75,7 @@ class _GlobalDynamicComponentsScreenState
         parameters = [];
         _resetIds();
         _loading = false;
+        _dirty = false;
       });
     }
   }
@@ -83,6 +99,7 @@ class _GlobalDynamicComponentsScreenState
         selectionStrategy: old.selectionStrategy,
         rules: old.rules,
       );
+      _dirty = true;
     });
   }
 
@@ -100,6 +117,7 @@ class _GlobalDynamicComponentsScreenState
       setState(() {
         if (updated != null) {
           components[index] = updated;
+          _dirty = true;
         }
         _normalizeParameters();
       });
@@ -111,10 +129,20 @@ class _GlobalDynamicComponentsScreenState
     }
   }
 
-  void _removeComponent(int index) {
+  Future<void> _removeComponent(int index) async {
+    final confirm = await showConfirmationDialog(
+      context,
+      title: 'Remove dynamic component?',
+      message: 'This global dynamic component will be deleted.',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirm) return;
+
     setState(() {
       components.removeAt(index);
       _componentIds.removeAt(index);
+      _dirty = true;
     });
   }
 
@@ -122,6 +150,7 @@ class _GlobalDynamicComponentsScreenState
     setState(() {
       components.add(DynamicComponentDef(name: '', rules: []));
       _componentIds.add(_createComponentId());
+      _dirty = true;
     });
   }
 
@@ -178,6 +207,7 @@ class _GlobalDynamicComponentsScreenState
         components = List<DynamicComponentDef>.from(cleaned);
         parameters = updatedParams;
         _resetIds();
+        _dirty = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -203,74 +233,77 @@ class _GlobalDynamicComponentsScreenState
               : entry.value.name.toLowerCase().contains(query),
         )
         .toList();
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Global Dynamic Components'),
-        actions: [
-          TextButton(
-            onPressed: _save,
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white,
-              backgroundColor: Theme.of(context).colorScheme.secondary,
+    return WillPopScope(
+      onWillPop: _confirmDiscardChanges,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Global Dynamic Components'),
+          actions: [
+            TextButton(
+              onPressed: _save,
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).colorScheme.secondary,
+              ),
+              child: const Text('Save'),
             ),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : components.isEmpty
-              ? const Center(
-                  child: Text('No dynamic components defined yet.'),
-                )
-              : Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    children: [
-                      TextField(
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search),
-                          hintText: 'Search dynamic components',
-                          border: OutlineInputBorder(),
+          ],
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : components.isEmpty
+                ? const Center(
+                    child: Text('No dynamic components defined yet.'),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      children: [
+                        TextField(
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.search),
+                            hintText: 'Search dynamic components',
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) {
+                            setState(() {
+                              _searchQuery = value;
+                            });
+                          },
                         ),
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      Expanded(
-                        child: filteredEntries.isEmpty
-                            ? const Center(
-                                child: Text(
-                                    'No dynamic components match your search.'),
-                              )
-                            : ListView.builder(
-                                itemCount: filteredEntries.length,
-                                itemBuilder: (context, index) {
-                                  final entry = filteredEntries[index];
-                                  return DynamicComponentEditor(
-                                    key: ValueKey(
-                                      _componentIds[entry.key],
-                                    ),
-                                    comp: entry.value,
-                                    onNameChanged: (value) => _onNameChanged(
-                                      entry.key,
-                                      value,
-                                    ),
-                                    onEditRules: () => _editRules(entry.key),
-                                    onDelete: () => _removeComponent(entry.key),
-                                  );
-                                },
-                              ),
-                      ),
-                    ],
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: filteredEntries.isEmpty
+                              ? const Center(
+                                  child: Text(
+                                      'No dynamic components match your search.'),
+                                )
+                              : ListView.builder(
+                                  itemCount: filteredEntries.length,
+                                  itemBuilder: (context, index) {
+                                    final entry = filteredEntries[index];
+                                    return DynamicComponentEditor(
+                                      key: ValueKey(
+                                        _componentIds[entry.key],
+                                      ),
+                                      comp: entry.value,
+                                      onNameChanged: (value) => _onNameChanged(
+                                        entry.key,
+                                        value,
+                                      ),
+                                      onEditRules: () => _editRules(entry.key),
+                                      onDelete: () => _removeComponent(entry.key),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addComponent,
-        child: const Icon(Icons.add),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _addComponent,
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }

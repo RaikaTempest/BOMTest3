@@ -1,35 +1,61 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:bom_builder/core/models.dart';
+import 'package:bom_builder/data/repo.dart';
 import 'package:bom_builder/ui/global_parameters_screen.dart';
 
+class _FakeRepo implements StandardsRepo {
+  @override
+  Future<void> approveCache(String key) async => throw UnimplementedError();
+
+  @override
+  Future<void> deleteStandard(String code) async => throw UnimplementedError();
+
+  @override
+  Future<Map<String, dynamic>?> getCacheEntry(String key) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<DynamicComponentDef>> loadGlobalDynamicComponents() async =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<ParameterDef>> loadGlobalParameters() async => [];
+
+  @override
+  Future<Map<String, Map<String, dynamic>>> listPendingCache() async =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<StandardDef>> listStandards() async => throw UnimplementedError();
+
+  @override
+  Future<void> rejectCache(String key) async => throw UnimplementedError();
+
+  @override
+  Future<void> saveCacheEntry(
+    String key,
+    Map<String, dynamic> entryJson,
+  ) async => throw UnimplementedError();
+
+  @override
+  Future<void> saveGlobalDynamicComponents(
+    List<DynamicComponentDef> components,
+  ) async => throw UnimplementedError();
+
+  @override
+  Future<void> saveGlobalParameters(List<ParameterDef> parameters) async {}
+
+  @override
+  Future<void> saveStandard(StandardDef std) async =>
+      throw UnimplementedError();
+}
+
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
-  const channel = MethodChannel('plugins.flutter.io/path_provider');
-  late Directory tempDir;
-
-  setUp(() async {
-    tempDir = await Directory.systemTemp.createTemp('global_parameters_test');
-    channel.setMockMethodCallHandler((MethodCall methodCall) async {
-      if (methodCall.method == 'getApplicationDocumentsDirectory') {
-        return tempDir.path;
-      }
-      return null;
-    });
-  });
-
-  tearDown(() async {
-    channel.setMockMethodCallHandler(null);
-    if (await tempDir.exists()) {
-      await tempDir.delete(recursive: true);
-    }
-  });
-
   testWidgets('renders Global Parameters screen title', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: GlobalParametersScreen()));
+    await tester.pumpWidget(
+      MaterialApp(home: GlobalParametersScreen(repo: _FakeRepo())),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Global Parameters'), findsOneWidget);
   });

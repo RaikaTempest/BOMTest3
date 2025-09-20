@@ -5,22 +5,26 @@ import 'package:bom_builder/core/models.dart';
 import 'package:bom_builder/data/local_repo.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  final binaryMessenger = binding.defaultBinaryMessenger;
   const channel = MethodChannel('plugins.flutter.io/path_provider');
   late Directory tempDir;
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('local_repo_test');
-    channel.setMockMethodCallHandler((MethodCall methodCall) async {
-      if (methodCall.method == 'getApplicationDocumentsDirectory') {
-        return tempDir.path;
-      }
-      return null;
-    });
+    binaryMessenger.setMockMethodCallHandler(
+      channel,
+      (MethodCall methodCall) async {
+        if (methodCall.method == 'getApplicationDocumentsDirectory') {
+          return tempDir.path;
+        }
+        return null;
+      },
+    );
   });
 
   tearDown(() async {
-    channel.setMockMethodCallHandler(null);
+    binaryMessenger.setMockMethodCallHandler(channel, null);
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }

@@ -39,7 +39,7 @@ class BomApp extends StatelessWidget {
             letterSpacing: 0.2,
           ),
         ),
-        tabBarTheme: TabBarTheme(
+        tabBarTheme: TabBarThemeData(
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white.withOpacity(0.65),
           labelStyle: const TextStyle(fontWeight: FontWeight.w600),
@@ -70,21 +70,21 @@ class BomApp extends StatelessWidget {
         checkboxTheme: CheckboxThemeData(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           side: BorderSide(color: Colors.white.withOpacity(0.4)),
-          fillColor: MaterialStateProperty.resolveWith(
-            (states) => states.contains(MaterialState.selected)
+          fillColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
                 ? colorScheme.secondary
                 : Colors.white.withOpacity(0.16),
           ),
-          checkColor: MaterialStateProperty.all(Colors.black),
+          checkColor: WidgetStateProperty.all(Colors.black),
         ),
         switchTheme: SwitchThemeData(
-          trackColor: MaterialStateProperty.resolveWith(
-            (states) => states.contains(MaterialState.selected)
+          trackColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
                 ? colorScheme.secondary.withOpacity(0.45)
                 : Colors.white.withOpacity(0.3),
           ),
-          thumbColor: MaterialStateProperty.resolveWith(
-            (states) => states.contains(MaterialState.selected)
+          thumbColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
                 ? colorScheme.secondary
                 : Colors.white70,
           ),
@@ -107,13 +107,13 @@ class BomApp extends StatelessWidget {
             borderSide: BorderSide(color: colorScheme.secondary),
           ),
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: Colors.white.withOpacity(0.06),
           shadowColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         ),
-        dialogTheme: DialogTheme(
+        dialogTheme: DialogThemeData(
           backgroundColor: const Color(0xFF0B1733),
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),

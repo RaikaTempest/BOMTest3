@@ -6,23 +6,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bom_builder/ui/standards_manager_screen.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  final binaryMessenger = binding.defaultBinaryMessenger;
 
   const channel = MethodChannel('plugins.flutter.io/path_provider');
   late Directory tempDir;
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('standards_manager_test');
-    channel.setMockMethodCallHandler((MethodCall methodCall) async {
-      if (methodCall.method == 'getApplicationDocumentsDirectory') {
-        return tempDir.path;
-      }
-      return null;
-    });
+    binaryMessenger.setMockMethodCallHandler(
+      channel,
+      (MethodCall methodCall) async {
+        if (methodCall.method == 'getApplicationDocumentsDirectory') {
+          return tempDir.path;
+        }
+        return null;
+      },
+    );
   });
 
   tearDown(() async {
-    channel.setMockMethodCallHandler(null);
+    binaryMessenger.setMockMethodCallHandler(channel, null);
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }

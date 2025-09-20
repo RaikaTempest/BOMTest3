@@ -22,7 +22,10 @@ class LocalStandardsRepo implements StandardsRepo {
     }
     final dynamicComponentsFile = File('${root.path}/dynamic_components.json');
     if (!await dynamicComponentsFile.exists()) {
-      await dynamicComponentsFile.writeAsString(jsonEncode(<dynamic>[]), flush: true);
+      await dynamicComponentsFile.writeAsString(
+        jsonEncode(<dynamic>[]),
+        flush: true,
+      );
     }
     _root = root;
     return root;
@@ -120,8 +123,9 @@ class LocalStandardsRepo implements StandardsRepo {
       return j
           .whereType<Map>()
           .map(
-            (e) =>
-                DynamicComponentDef.fromJson((e as Map).cast<String, dynamic>()),
+            (e) => DynamicComponentDef.fromJson(
+              (e as Map).cast<String, dynamic>(),
+            ),
           )
           .toList();
     }
@@ -130,7 +134,8 @@ class LocalStandardsRepo implements StandardsRepo {
 
   @override
   Future<void> saveGlobalDynamicComponents(
-      List<DynamicComponentDef> components) async {
+    List<DynamicComponentDef> components,
+  ) async {
     final f = await _dynamicComponentsFile();
     final tmp = File('${f.path}.tmp');
     await tmp.writeAsString(
@@ -141,7 +146,10 @@ class LocalStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> saveCacheEntry(String key, Map<String, dynamic> entryJson) async {
+  Future<void> saveCacheEntry(
+    String key,
+    Map<String, dynamic> entryJson,
+  ) async {
     final f = await _pendingFile(key);
     final tmp = File('${f.path}.tmp');
     await tmp.writeAsString(jsonEncode(entryJson), flush: true);

@@ -9,6 +9,7 @@ import '../core/models.dart';
 import '../data/project_repo.dart';
 import '../data/repo_factory.dart';
 import 'standards_manager_screen.dart';
+import 'dialogs.dart';
 import 'widgets/bom_scaffold.dart';
 import 'widgets/glass_container.dart';
 
@@ -351,6 +352,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
   late Set<String> selected;
   late Map<String, dynamic> vars;
   late List<StandardDef> available;
+  bool _dirty = false;
 
   @override
   void initState() {
@@ -377,6 +379,18 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     vars.removeWhere((k, _) => !keys.contains(k));
   }
 
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_dirty) return true;
+    return await showConfirmationDialog(
+      context,
+      title: 'Discard changes?',
+      message:
+          'You have unsaved changes for this location. Leave without saving?',
+      confirmLabel: 'Discard',
+      isDestructive: true,
+    );
+  }
+
   Future<void> _addStandard() async {
     final choices =
         available.where((s) => !selected.contains(s.code)).toList();
@@ -399,8 +413,26 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
       setState(() {
         selected.add(code);
         _pruneVars();
+        _dirty = true;
       });
     }
+  }
+
+  Future<void> _removeStandard(String code) async {
+    final confirm = await showConfirmationDialog(
+      context,
+      title: 'Remove standard?',
+      message: 'This standard will be removed from this location.',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirm) return;
+
+    setState(() {
+      selected.remove(code);
+      _pruneVars();
+      _dirty = true;
+    });
   }
 
   Future<void> _manageStandards() async {
@@ -420,7 +452,10 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
           value: (vars[p.key] as bool?) ?? false,
           title: Text(label),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          onChanged: (v) => setState(() => vars[p.key] = v),
+          onChanged: (v) => setState(() {
+            vars[p.key] = v;
+            _dirty = true;
+          }),
         );
       case ParamType.enumType:
         return DropdownButtonFormField<String>(
@@ -430,7 +465,10 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
           items: p.allowedValues
               .map((v) => DropdownMenuItem(value: v, child: Text(v)))
               .toList(),
-          onChanged: (v) => setState(() => vars[p.key] = v),
+          onChanged: (v) => setState(() {
+            vars[p.key] = v;
+            _dirty = true;
+          }),
         );
       case ParamType.number:
         return TextFormField(
@@ -438,7 +476,10 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
           initialValue: vars[p.key]?.toString() ?? '',
           decoration: InputDecoration(labelText: label),
           keyboardType: TextInputType.number,
-          onChanged: (v) => vars[p.key] = double.tryParse(v),
+          onChanged: (v) {
+            vars[p.key] = double.tryParse(v);
+            _dirty = true;
+          },
         );
       case ParamType.text:
       default:
@@ -446,7 +487,10 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
           key: ValueKey(p.key),
           initialValue: vars[p.key]?.toString() ?? '',
           decoration: InputDecoration(labelText: label),
-          onChanged: (v) => vars[p.key] = v,
+          onChanged: (v) {
+            vars[p.key] = v;
+            _dirty = true;
+          },
         );
     }
   }
@@ -455,41 +499,43 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final params = _gatherParams();
-    return BomScaffold(
-      appBar: AppBar(
-        title: const Text('Apply Standards'),
-        actions: [
-          IconButton(
-            tooltip: 'Open standards manager',
-            icon: const Icon(Icons.library_add_outlined),
-            onPressed: _manageStandards,
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16, left: 8),
-            child: FilledButton.icon(
-              onPressed: () => Navigator.of(context).pop({
-                'standards': selected,
-                'variables': vars,
-              }),
-              icon: const Icon(Icons.check_circle_outline),
-              label: const Text('Done'),
+    return WillPopScope(
+      onWillPop: _confirmDiscardChanges,
+      child: BomScaffold(
+        appBar: AppBar(
+          title: const Text('Apply Standards'),
+          actions: [
+            IconButton(
+              tooltip: 'Open standards manager',
+              icon: const Icon(Icons.library_add_outlined),
+              onPressed: _manageStandards,
             ),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-        child: ListView(
-          children: [
-            GlassContainer(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Selected standards',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+            Padding(
+              padding: const EdgeInsets.only(right: 16, left: 8),
+              child: FilledButton.icon(
+                onPressed: () => Navigator.of(context).pop({
+                  'standards': selected,
+                  'variables': vars,
+                }),
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('Done'),
+              ),
+            ),
+          ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
+          child: ListView(
+            children: [
+              GlassContainer(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Selected standards',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                   ),
                   const SizedBox(height: 16),
                   if (selected.isEmpty)
@@ -555,10 +601,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
                             IconButton(
                               icon: const Icon(Icons.delete_outline),
                               tooltip: 'Remove standard',
-                              onPressed: () => setState(() {
-                                selected.remove(code);
-                                _pruneVars();
-                              }),
+                              onPressed: () => _removeStandard(code),
                             ),
                           ],
                         ),
@@ -574,27 +617,28 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
                 ],
               ),
             ),
-            if (params.isNotEmpty) const SizedBox(height: 24),
-            if (params.isNotEmpty)
-              GlassContainer(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Variable inputs',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
+              if (params.isNotEmpty) const SizedBox(height: 24),
+              if (params.isNotEmpty)
+                GlassContainer(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Variable inputs',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    ...params.map((p) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: _buildParamField(p),
-                        )),
-                  ],
+                      const SizedBox(height: 16),
+                      ...params.map((p) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: _buildParamField(p),
+                          )),
+                    ],
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/models.dart';
 import 'rule_wizard.dart';
+import 'dialogs.dart';
 
 class DynamicComponentRulesScreen extends StatefulWidget {
   final DynamicComponentDef component;
@@ -61,7 +62,16 @@ class _DynamicComponentRulesScreenState
     }
   }
 
-  void _deleteRule(int index) {
+  Future<void> _deleteRule(int index) async {
+    final confirm = await showConfirmationDialog(
+      context,
+      title: 'Remove rule?',
+      message: 'This rule will be deleted from the dynamic component.',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirm) return;
+
     setState(() {
       _rules.removeAt(index);
     });
@@ -174,7 +184,9 @@ class _DynamicComponentRulesScreenState
                                     child: const Text('Edit'),
                                   ),
                                   TextButton(
-                                    onPressed: () => _deleteRule(entry.key),
+                                    onPressed: () {
+                                      _deleteRule(entry.key);
+                                    },
                                     child: const Text('Delete'),
                                   ),
                                 ],
