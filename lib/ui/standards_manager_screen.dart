@@ -19,6 +19,7 @@ class StandardsManagerScreen extends StatefulWidget {
 class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
   late final StandardsRepo repo;
   List<StandardDef> standards = [];
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -48,20 +49,53 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final query = _searchQuery.trim().toLowerCase();
+    final filteredStandards = query.isEmpty
+        ? standards
+        : standards
+            .where(
+              (s) =>
+                  s.code.toLowerCase().contains(query) ||
+                  s.name.toLowerCase().contains(query),
+            )
+            .toList();
     return Scaffold(
       appBar: AppBar(title: const Text('Standards')),
-      body: ListView.builder(
-        itemCount: standards.length,
-        itemBuilder: (_, i) {
-          final s = standards[i];
-          return ListTile(
-            title: Text('${s.code} — ${s.name}'),
-            trailing: IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: () => _openDetail(s),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: TextField(
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Search standards',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
             ),
-          );
-        },
+          ),
+          Expanded(
+            child: filteredStandards.isEmpty
+                ? const Center(child: Text('No standards found.'))
+                : ListView.builder(
+                    itemCount: filteredStandards.length,
+                    itemBuilder: (_, i) {
+                      final s = filteredStandards[i];
+                      return ListTile(
+                        title: Text('${s.code} — ${s.name}'),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () => _openDetail(s),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openDetail(),
@@ -207,21 +241,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       );
       return;
     }
-    final selected = await showDialog<ParameterDef>(
-      context: context,
-      builder: (context) {
-        return SimpleDialog(
-          title: const Text('Select parameter'),
-          children: [
-            for (final option in options)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, option),
-                child: Text('${option.key} (${paramTypeToString(option.type)})'),
-              ),
-          ],
-        );
-      },
-    );
+    final selected = await _showParameterSelectionDialog(options);
     if (selected == null) return;
     setState(() {
       parameters.add(_cloneParameter(selected));
@@ -245,27 +265,145 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       );
       return;
     }
-    final selected = await showDialog<DynamicComponentDef>(
-      context: context,
-      builder: (context) {
-        return SimpleDialog(
-          title: const Text('Select dynamic component'),
-          children: [
-            for (final option in options)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, option),
-                child: Text(option.name),
-              ),
-          ],
-        );
-      },
-    );
+    final selected = await _showDynamicComponentSelectionDialog(options);
     if (selected == null) return;
     setState(() {
       dynamicComponents.add(_cloneDynamicComponent(selected));
       _dynamicComponentIds.add(_createDynamicComponentId());
       _combineGlobalDynamicComponents();
     });
+  }
+
+  Future<ParameterDef?> _showParameterSelectionDialog(
+    List<ParameterDef> options,
+  ) async {
+    return showDialog<ParameterDef>(
+      context: context,
+      builder: (context) {
+        var query = '';
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final filtered = options
+                .where((option) {
+                  if (query.isEmpty) return true;
+                  final lower = query.toLowerCase();
+                  return option.key.toLowerCase().contains(lower) ||
+                      (option.unit?.toLowerCase().contains(lower) ?? false);
+                })
+                .toList();
+            return AlertDialog(
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Select parameter'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Search parameters',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setModalState(() {
+                        query = value.trim();
+                      });
+                    },
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 400,
+                height: 400,
+                child: filtered.isEmpty
+                    ? const Center(
+                        child: Text('No parameters match your search.'),
+                      )
+                    : ListView.builder(
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          final option = filtered[index];
+                          return ListTile(
+                            title: Text(
+                                '${option.key} (${paramTypeToString(option.type)})'),
+                            subtitle: option.unit == null ||
+                                    option.unit!.trim().isEmpty
+                                ? null
+                                : Text(option.unit!),
+                            onTap: () => Navigator.pop(context, option),
+                          );
+                        },
+                      ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<DynamicComponentDef?> _showDynamicComponentSelectionDialog(
+    List<DynamicComponentDef> options,
+  ) async {
+    return showDialog<DynamicComponentDef>(
+      context: context,
+      builder: (context) {
+        var query = '';
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final filtered = options
+                .where(
+                  (option) => query.isEmpty
+                      ? true
+                      : option.name.toLowerCase().contains(query.toLowerCase()),
+                )
+                .toList();
+            return AlertDialog(
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Select dynamic component'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Search components',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setModalState(() {
+                        query = value.trim();
+                      });
+                    },
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 400,
+                height: 400,
+                child: filtered.isEmpty
+                    ? const Center(
+                        child: Text('No dynamic components match your search.'),
+                      )
+                    : ListView.builder(
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          final option = filtered[index];
+                          return ListTile(
+                            title: Text(option.name),
+                            onTap: () => Navigator.pop(context, option),
+                          );
+                        },
+                      ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   ParameterDef _cloneParameter(ParameterDef source) => ParameterDef(
