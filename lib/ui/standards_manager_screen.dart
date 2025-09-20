@@ -47,6 +47,35 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
     }
   }
 
+  Future<void> _confirmDelete(StandardDef std) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete standard'),
+        content: Text(
+          'Are you sure you want to delete "${std.code} — ${std.name}"? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await repo.deleteStandard(std.code);
+      if (!mounted) return;
+      setState(() {
+        standards.removeWhere((s) => s.code == std.code);
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final query = _searchQuery.trim().toLowerCase();
@@ -83,17 +112,28 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
                 ? const Center(child: Text('No standards found.'))
                 : ListView.builder(
                     itemCount: filteredStandards.length,
-                    itemBuilder: (_, i) {
-                      final s = filteredStandards[i];
-                      return ListTile(
-                        title: Text('${s.code} — ${s.name}'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.edit),
-                          onPressed: () => _openDetail(s),
-                        ),
-                      );
-                    },
-                  ),
+                  itemBuilder: (_, i) {
+                    final s = filteredStandards[i];
+                    return ListTile(
+                      title: Text('${s.code} — ${s.name}'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit),
+                            tooltip: 'Edit standard',
+                            onPressed: () => _openDetail(s),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete),
+                            tooltip: 'Delete standard',
+                            onPressed: () => _confirmDelete(s),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
           ),
         ],
       ),
