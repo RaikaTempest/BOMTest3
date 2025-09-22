@@ -238,8 +238,13 @@ class _ProjectScreenState extends State<ProjectScreen> {
   Future<void> _exportCsv() async {
     final repo = await createRepo();
     final standards = await repo.listStandards();
+    final flaggedMaterials = await repo.loadFlaggedMaterials();
     final exporter = BomExporter();
-    final csv = exporter.buildCsv(locations, standards);
+    final csv = exporter.buildCsv(
+      locations,
+      standards,
+      flaggedMaterials: flaggedMaterials,
+    );
     const csvTypeGroup = XTypeGroup(
       label: 'CSV',
       extensions: <String>['csv'],
