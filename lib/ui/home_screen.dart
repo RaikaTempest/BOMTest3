@@ -9,6 +9,7 @@ import '../data/project_repo.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
 import '../data/repo_location_store.dart';
+import 'flagged_materials_screen.dart';
 import 'global_dynamic_components_screen.dart';
 import 'global_parameters_screen.dart';
 import 'project_screen.dart';
@@ -23,7 +24,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: BomScaffold(
         appBar: AppBar(
           toolbarHeight: 90,
@@ -108,6 +109,7 @@ class HomeScreen extends StatelessWidget {
                     Tab(text: 'Standards'),
                     Tab(text: 'Dynamic Components'),
                     Tab(text: 'Parameters'),
+                    Tab(text: 'Flagged Materials'),
                   ],
                 ),
               ),
@@ -120,6 +122,7 @@ class HomeScreen extends StatelessWidget {
             StandardsManagerScreen(),
             GlobalDynamicComponentsScreen(),
             GlobalParametersScreen(),
+            FlaggedMaterialsScreen(),
           ],
         ),
       ),
