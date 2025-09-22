@@ -97,6 +97,7 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
         final note = material.note?.trim() ?? '';
         final altMm = material.alternativeMm?.trim() ?? '';
         final altName = material.alternativeName?.trim() ?? '';
+        final flaggedBy = material.flaggedBy?.trim() ?? '';
 
         if (mm.isEmpty && name.isEmpty && note.isEmpty) {
           continue;
@@ -127,7 +128,7 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
                 : null,
             note: note.isEmpty ? null : note,
             flaggedAt: material.flaggedAt,
-            flaggedBy: material.flaggedBy,
+            flaggedBy: flaggedBy.isEmpty ? null : flaggedBy,
           ),
         );
       }
@@ -394,9 +395,9 @@ class _FlaggedMaterialEditorState extends State<_FlaggedMaterialEditor> {
   late TextEditingController noteController;
   late TextEditingController alternativeMmController;
   late TextEditingController alternativeNameController;
+  late TextEditingController flaggedByController;
   late bool alternativeAvailable;
   DateTime? flaggedAt;
-  String? flaggedBy;
 
   @override
   void initState() {
@@ -408,9 +409,10 @@ class _FlaggedMaterialEditorState extends State<_FlaggedMaterialEditor> {
         TextEditingController(text: widget.material.alternativeMm ?? '');
     alternativeNameController =
         TextEditingController(text: widget.material.alternativeName ?? '');
+    flaggedByController =
+        TextEditingController(text: widget.material.flaggedBy ?? '');
     alternativeAvailable = widget.material.alternativeAvailable;
     flaggedAt = widget.material.flaggedAt;
-    flaggedBy = widget.material.flaggedBy;
   }
 
   @override
@@ -422,11 +424,11 @@ class _FlaggedMaterialEditorState extends State<_FlaggedMaterialEditor> {
     _syncController(alternativeMmController, widget.material.alternativeMm ?? '');
     _syncController(
         alternativeNameController, widget.material.alternativeName ?? '');
+    _syncController(flaggedByController, widget.material.flaggedBy ?? '');
     if (alternativeAvailable != widget.material.alternativeAvailable) {
       alternativeAvailable = widget.material.alternativeAvailable;
     }
     flaggedAt = widget.material.flaggedAt;
-    flaggedBy = widget.material.flaggedBy;
   }
 
   TextSelection _clampSelection(TextSelection selection, int maxLength) {
@@ -464,6 +466,7 @@ class _FlaggedMaterialEditorState extends State<_FlaggedMaterialEditor> {
     final note = noteController.text.trim();
     final altMm = alternativeMmController.text.trim();
     final altName = alternativeNameController.text.trim();
+    final flaggedBy = flaggedByController.text.trim();
     return FlaggedMaterial(
       mm: mm,
       name: name,
@@ -473,12 +476,71 @@ class _FlaggedMaterialEditorState extends State<_FlaggedMaterialEditor> {
           alternativeAvailable && altName.isNotEmpty ? altName : null,
       note: note.isEmpty ? null : note,
       flaggedAt: flaggedAt,
-      flaggedBy: flaggedBy,
+      flaggedBy: flaggedBy.isEmpty ? null : flaggedBy,
     );
   }
 
   void _notify() {
     widget.onChanged(_buildMaterial());
+  }
+
+  Future<void> _pickFlaggedAt() async {
+    final context = this.context;
+    final now = DateTime.now();
+    final initialDate = flaggedAt ?? now;
+    final date = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      initialDate: initialDate,
+    );
+    if (date == null) return;
+
+    final initialTime = flaggedAt != null
+        ? TimeOfDay.fromDateTime(flaggedAt!)
+        : TimeOfDay.fromDateTime(now);
+    final time = await showTimePicker(
+      context: context,
+      initialTime: initialTime,
+    );
+
+    setState(() {
+      if (time == null) {
+        flaggedAt = DateTime(date.year, date.month, date.day);
+      } else {
+        flaggedAt = DateTime(
+          date.year,
+          date.month,
+          date.day,
+          time.hour,
+          time.minute,
+        );
+      }
+    });
+    _notify();
+  }
+
+  void _clearFlaggedAt() {
+    if (flaggedAt == null) return;
+    setState(() {
+      flaggedAt = null;
+    });
+    _notify();
+  }
+
+  String _formatFlaggedAt(BuildContext context) {
+    final value = flaggedAt;
+    if (value == null) {
+      return 'Set flagged date & time';
+    }
+    final localizations = MaterialLocalizations.of(context);
+    final dateText = localizations.formatMediumDate(value);
+    final timeText = localizations.formatTimeOfDay(
+      TimeOfDay.fromDateTime(value),
+      alwaysUse24HourFormat: MediaQuery.maybeOf(context)?.alwaysUse24HourFormat ??
+          false,
+    );
+    return '$dateText · $timeText';
   }
 
   @override
@@ -488,6 +550,7 @@ class _FlaggedMaterialEditorState extends State<_FlaggedMaterialEditor> {
     noteController.dispose();
     alternativeMmController.dispose();
     alternativeNameController.dispose();
+    flaggedByController.dispose();
     super.dispose();
   }
 
@@ -586,6 +649,48 @@ class _FlaggedMaterialEditorState extends State<_FlaggedMaterialEditor> {
             ],
           ),
         ],
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _pickFlaggedAt,
+                icon: const Icon(Icons.event_outlined),
+                label: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _formatFlaggedAt(context),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  foregroundColor: Colors.white,
+                  backgroundColor: Colors.white.withOpacity(0.02),
+                  side: BorderSide(color: Colors.white.withOpacity(0.1)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                controller: flaggedByController,
+                decoration: const InputDecoration(labelText: 'Flagged by'),
+                onChanged: (_) => _notify(),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Tooltip(
+              message: 'Clear flagged date',
+              child: IconButton(
+                onPressed: flaggedAt == null ? null : _clearFlaggedAt,
+                icon: const Icon(Icons.clear),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }

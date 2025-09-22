@@ -23,6 +23,8 @@ class _GlobalDynamicComponentsScreenState
   bool _loading = true;
   List<ParameterDef> parameters = [];
   String _searchQuery = '';
+  List<DynamicComponentDef> _originalComponents = [];
+  List<ParameterDef> _originalParameters = [];
 
   String _createComponentId() => 'global_dynamic_${_nextComponentId++}';
 
@@ -51,6 +53,8 @@ class _GlobalDynamicComponentsScreenState
         repo = loadedRepo;
         components = loadedComponents;
         parameters = loadedParameters;
+        _originalComponents = List<DynamicComponentDef>.from(loadedComponents);
+        _originalParameters = List<ParameterDef>.from(loadedParameters);
         _resetIds();
         _loading = false;
       });
@@ -60,6 +64,8 @@ class _GlobalDynamicComponentsScreenState
         repo = null;
         components = [];
         parameters = [];
+        _originalComponents = [];
+        _originalParameters = [];
         _resetIds();
         _loading = false;
       });
@@ -159,11 +165,28 @@ class _GlobalDynamicComponentsScreenState
       }
 
       cleaned.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-      await repo.saveGlobalDynamicComponents(cleaned);
+      final componentResult = await repo.saveGlobalDynamicComponents(
+        DynamicComponentsSaveRequest(
+          original: _originalComponents,
+          updated: cleaned,
+        ),
+      );
 
-      final existingParams = await repo.loadGlobalParameters();
+      if (componentResult.hasConflicts) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Conflicts detected. Review the dynamic components before saving.',
+            ),
+          ),
+        );
+        await _showComponentConflictDialog(componentResult);
+        return;
+      }
+
       final paramMap = <String, ParameterDef>{};
-      for (final p in existingParams) {
+      for (final p in _originalParameters) {
         final key = p.key.trim();
         if (key.isEmpty) continue;
         paramMap[key] = p;
@@ -175,23 +198,244 @@ class _GlobalDynamicComponentsScreenState
       }
       final updatedParams = paramMap.values.toList()
         ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
-      await repo.saveGlobalParameters(updatedParams);
+
+      final parameterResult = await repo.saveGlobalParameters(
+        ParametersSaveRequest(
+          original: _originalParameters,
+          updated: updatedParams,
+        ),
+      );
+
+      if (parameterResult.hasConflicts) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Parameter conflicts detected. Review the global parameters.',
+            ),
+          ),
+        );
+        await _showParameterConflictDialog(parameterResult);
+        return;
+      }
 
       if (!mounted) return;
       setState(() {
-        components = List<DynamicComponentDef>.from(cleaned);
-        parameters = updatedParams;
+        components = List<DynamicComponentDef>.from(componentResult.merged);
+        parameters = parameterResult.merged;
+        _originalComponents = List<DynamicComponentDef>.from(componentResult.merged);
+        _originalParameters = List<ParameterDef>.from(parameterResult.merged);
         _resetIds();
+        _normalizeParameters();
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Dynamic components saved.')),
-      );
+      if (componentResult.hasRemoteChanges) {
+        _showComponentMergeSnackBar(componentResult.remoteChanges);
+      } else if (componentResult.wroteFile) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Dynamic components saved.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No component changes to save.')),
+        );
+      }
+
+      if (parameterResult.hasRemoteChanges) {
+        _showParameterMergeSnackBar(parameterResult.remoteChanges);
+      } else if (parameterResult.wroteFile) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Supporting parameters saved.')),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Save error: $e')),
       );
+    }
+  }
+
+  Future<void> _showComponentConflictDialog(
+      DynamicComponentsSaveResult result) async {
+    if (!mounted) return;
+    final shouldReload = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Dynamic component conflicts'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Another session updated these dynamic components. Resolve the conflicts below or reload the remote data.',
+                ),
+                const SizedBox(height: 12),
+                for (final conflict in result.conflicts)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(_describeComponentConflict(conflict)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep editing'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reload remote data'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldReload == true && mounted) {
+      setState(() {
+        components = List<DynamicComponentDef>.from(result.merged);
+        _originalComponents = List<DynamicComponentDef>.from(result.merged);
+        _resetIds();
+      });
+    }
+  }
+
+  Future<void> _showParameterConflictDialog(ParametersSaveResult result) async {
+    if (!mounted) return;
+    final shouldReload = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Parameter conflicts'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Another session updated the supporting parameters. Resolve the conflicts below or reload the remote data.',
+                ),
+                const SizedBox(height: 12),
+                for (final conflict in result.conflicts)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(_describeParameterConflict(conflict)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep editing'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reload remote data'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldReload == true && mounted) {
+      setState(() {
+        parameters = List<ParameterDef>.from(result.merged);
+        _originalParameters = List<ParameterDef>.from(result.merged);
+        _normalizeParameters();
+      });
+    }
+  }
+
+  void _showComponentMergeSnackBar(Set<String> names) {
+    final list = names.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final preview = list.length > 3
+        ? '${list.take(3).join(', ')} and ${list.length - 3} more'
+        : list.join(', ');
+    final message = list.isEmpty
+        ? 'Dynamic components saved.'
+        : 'Merged component updates for: $preview';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: list.isEmpty
+            ? null
+            : SnackBarAction(
+                label: 'Review',
+                onPressed: () => _showMergeDetails(list),
+              ),
+      ),
+    );
+  }
+
+  void _showParameterMergeSnackBar(Set<String> keys) {
+    final list = keys.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    if (list.isEmpty) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Merged parameter updates for: ${list.join(', ')}'),
+      ),
+    );
+  }
+
+  void _showMergeDetails(List<String> items) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Merged updates'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final item in items)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(item),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _describeComponentConflict(DynamicComponentConflict conflict) {
+    switch (conflict.type) {
+      case DynamicComponentConflictType.addition:
+        return 'Component "${conflict.name}" was added elsewhere.';
+      case DynamicComponentConflictType.removal:
+        return 'Component "${conflict.name}" was removed remotely.';
+      case DynamicComponentConflictType.field:
+        final fields = conflict.fields.toList()..sort();
+        final label = fields.join(', ');
+        return 'Component "${conflict.name}" changed remotely: $label.';
+    }
+  }
+
+  String _describeParameterConflict(ParameterConflict conflict) {
+    switch (conflict.type) {
+      case ParameterConflictType.addition:
+        return 'Parameter "${conflict.key}" was added elsewhere.';
+      case ParameterConflictType.removal:
+        return 'Parameter "${conflict.key}" was removed remotely.';
+      case ParameterConflictType.field:
+        final fields = conflict.fields.toList()..sort();
+        final label = fields.join(', ');
+        return 'Parameter "${conflict.key}" changed remotely: $label.';
     }
   }
 

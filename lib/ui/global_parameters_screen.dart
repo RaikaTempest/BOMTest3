@@ -21,6 +21,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
   int _nextParameterId = 0;
   bool _loading = true;
   String _searchQuery = '';
+  List<ParameterDef> _originalParameters = [];
 
   String _createParameterId() => 'global_param_${_nextParameterId++}';
 
@@ -45,6 +46,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
       setState(() {
         repo = loadedRepo;
         parameters = list;
+        _originalParameters = List<ParameterDef>.from(list);
         _resetParameterIds();
         _loading = false;
       });
@@ -53,6 +55,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
       setState(() {
         repo = null;
         parameters = [];
+        _originalParameters = [];
         _resetParameterIds();
         _loading = false;
       });
@@ -111,20 +114,160 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
         );
       }
       cleaned.sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
-      await repo.saveGlobalParameters(cleaned);
+      final result = await repo.saveGlobalParameters(
+        ParametersSaveRequest(
+          original: _originalParameters,
+          updated: cleaned,
+        ),
+      );
+
+      if (result.hasConflicts) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Conflicts detected. Review the global parameters before saving.',
+            ),
+          ),
+        );
+        await _showConflictDialog(result);
+        return;
+      }
+
       setState(() {
-        parameters = List<ParameterDef>.from(cleaned);
+        parameters = List<ParameterDef>.from(result.merged);
+        _originalParameters = List<ParameterDef>.from(result.merged);
         _resetParameterIds();
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Parameters saved.')),
-      );
+      if (result.hasRemoteChanges) {
+        _showMergeSnackBar(result.remoteChanges);
+      } else if (result.wroteFile) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Parameters saved.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No changes to save.')),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Save error: $e')),
       );
+    }
+  }
+
+  Future<void> _showConflictDialog(ParametersSaveResult result) async {
+    if (!mounted) return;
+    final shouldReload = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Conflicts detected'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Another session updated these parameters. Resolve the conflicts below or reload the remote data.',
+                ),
+                const SizedBox(height: 12),
+                for (final conflict in result.conflicts)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(_describeParameterConflict(conflict)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep editing'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reload remote data'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldReload == true && mounted) {
+      setState(() {
+        parameters = List<ParameterDef>.from(result.merged);
+        _originalParameters = List<ParameterDef>.from(result.merged);
+        _resetParameterIds();
+      });
+    }
+  }
+
+  void _showMergeSnackBar(Set<String> keys) {
+    final items = keys.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final preview = items.length > 3
+        ? '${items.take(3).join(', ')} and ${items.length - 3} more'
+        : items.join(', ');
+    final message = items.isEmpty
+        ? 'Parameters saved.'
+        : 'Merged updates for: $preview';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: items.isEmpty
+            ? null
+            : SnackBarAction(
+                label: 'Review',
+                onPressed: () => _showMergeDetails(items),
+              ),
+      ),
+    );
+  }
+
+  void _showMergeDetails(List<String> keys) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Merged updates'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final key in keys)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(key),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _describeParameterConflict(ParameterConflict conflict) {
+    switch (conflict.type) {
+      case ParameterConflictType.addition:
+        return 'Parameter "${conflict.key}" was added elsewhere.';
+      case ParameterConflictType.removal:
+        return 'Parameter "${conflict.key}" was removed remotely.';
+      case ParameterConflictType.field:
+        final fields = conflict.fields.toList()..sort();
+        final label = fields.join(', ');
+        return 'Parameter "${conflict.key}" changed remotely: $label.';
     }
   }
 

@@ -187,7 +187,9 @@ class _JobTabState extends State<_JobTab> {
           ),
         ],
       );
-      await repo.saveStandard(std);
+      await repo.saveStandard(
+        StandardSaveRequest(updated: std),
+      );
       list = await repo.listStandards();
     }
     return list;

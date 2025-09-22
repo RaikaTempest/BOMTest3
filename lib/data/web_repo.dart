@@ -39,10 +39,25 @@ class WebStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> saveStandard(StandardDef std) async {
+  Future<StandardSaveResult> saveStandard(StandardSaveRequest request) async {
+    final updated = request.updated;
     final m = _getMap(_kStandards);
-    m[std.code] = std.toJson();
-    _setMap(_kStandards, m);
+    StandardDef? remote;
+    final raw = m[updated.code];
+    if (raw is Map) {
+      remote = StandardDef.fromJson(raw.cast<String, dynamic>());
+    }
+    final unchanged = remote != null && _standardEquals(remote, updated);
+    if (!unchanged) {
+      m[updated.code] = updated.toJson();
+      _setMap(_kStandards, m);
+    }
+    return StandardSaveResult(
+      merged: unchanged ? remote : updated,
+      conflict: null,
+      wroteFile: !unchanged,
+      alreadyUpToDate: unchanged,
+    );
   }
 
   @override
@@ -68,12 +83,24 @@ class WebStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> saveGlobalParameters(List<ParameterDef> parameters) async {
-    _setMap(
-      _kParameters,
-      {
-        'items': parameters.map((e) => e.toJson()).toList(),
-      },
+  Future<ParametersSaveResult> saveGlobalParameters(
+      ParametersSaveRequest request) async {
+    final updated = request.updated;
+    final existing = await loadGlobalParameters();
+    final unchanged = _parameterListsEqual(existing, updated);
+    if (!unchanged) {
+      _setMap(
+        _kParameters,
+        {
+          'items': updated.map((e) => e.toJson()).toList(),
+        },
+      );
+    }
+    return ParametersSaveResult(
+      merged: List<ParameterDef>.from(updated),
+      conflicts: const [],
+      remoteChanges: const {},
+      wroteFile: !unchanged,
     );
   }
 
@@ -95,13 +122,24 @@ class WebStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> saveGlobalDynamicComponents(
-      List<DynamicComponentDef> components) async {
-    _setMap(
-      _kDynamicComponents,
-      {
-        'items': components.map((e) => e.toJson()).toList(),
-      },
+  Future<DynamicComponentsSaveResult> saveGlobalDynamicComponents(
+      DynamicComponentsSaveRequest request) async {
+    final updated = request.updated;
+    final existing = await loadGlobalDynamicComponents();
+    final unchanged = _dynamicComponentListsEqual(existing, updated);
+    if (!unchanged) {
+      _setMap(
+        _kDynamicComponents,
+        {
+          'items': updated.map((e) => e.toJson()).toList(),
+        },
+      );
+    }
+    return DynamicComponentsSaveResult(
+      merged: List<DynamicComponentDef>.from(updated),
+      conflicts: const [],
+      remoteChanges: const {},
+      wroteFile: !unchanged,
     );
   }
 
@@ -141,10 +179,26 @@ class WebStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> saveCacheEntry(String key, Map<String, dynamic> entryJson) async {
+  Future<CacheSaveResult> saveCacheEntry(CacheSaveRequest request) async {
     final m = _getMap(_kPending);
-    m[key] = entryJson;
-    _setMap(_kPending, m);
+    Map<String, dynamic>? remote;
+    final raw = m[request.key];
+    if (raw is Map) {
+      remote = raw.cast<String, dynamic>();
+    }
+    final updated = Map<String, dynamic>.from(request.updated);
+    final unchanged = remote != null && _mapsDeepEqual(remote, updated);
+    if (!unchanged) {
+      m[request.key] = updated;
+      _setMap(_kPending, m);
+    }
+    return CacheSaveResult(
+      key: request.key,
+      merged: unchanged ? remote : updated,
+      conflict: null,
+      wroteFile: !unchanged,
+      alreadyUpToDate: unchanged,
+    );
   }
 
   @override
@@ -180,4 +234,63 @@ class WebStandardsRepo implements StandardsRepo {
     p.remove(key);
     _setMap(_kPending, p);
   }
+}
+
+String _canonicalJsonString(Object? value) =>
+    jsonEncode(_canonicalizeJson(value));
+
+dynamic _canonicalizeJson(dynamic value) {
+  if (value is Map) {
+    final sortedKeys = value.keys.map((e) => e.toString()).toList()
+      ..sort((a, b) => a.compareTo(b));
+    return {
+      for (final key in sortedKeys)
+        key: _canonicalizeJson(value[key])
+    };
+  }
+  if (value is List) {
+    return value.map(_canonicalizeJson).toList();
+  }
+  return value;
+}
+
+bool _standardEquals(StandardDef? a, StandardDef? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return a == null && b == null;
+  return _canonicalJsonString(a.toJson()) ==
+      _canonicalJsonString(b.toJson());
+}
+
+bool _parameterListsEqual(
+  List<ParameterDef> a,
+  List<ParameterDef> b,
+) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (_canonicalJsonString(a[i].toJson()) !=
+        _canonicalJsonString(b[i].toJson())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _dynamicComponentListsEqual(
+  List<DynamicComponentDef> a,
+  List<DynamicComponentDef> b,
+) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (_canonicalJsonString(a[i].toJson()) !=
+        _canonicalJsonString(b[i].toJson())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _mapsDeepEqual(Map<String, dynamic>? a, Map<String, dynamic>? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return a == null && b == null;
+  return _canonicalJsonString(a) == _canonicalJsonString(b);
 }

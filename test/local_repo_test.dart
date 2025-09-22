@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:bom_builder/core/models.dart';
 import 'package:bom_builder/data/local_repo.dart';
+import 'package:bom_builder/data/repo.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -36,7 +37,9 @@ void main() {
       staticComponents: [],
       dynamicComponents: [],
     );
-    await repo.saveStandard(std);
+    await repo.saveStandard(
+      StandardSaveRequest(original: null, updated: std),
+    );
     final list = await repo.listStandards();
     expect(list.length, 1);
     expect(list.first.code, 'T1');
@@ -49,7 +52,9 @@ void main() {
       ParameterDef(key: 'Color', type: ParamType.enumType, allowedValues: ['Red', 'Blue']),
     ];
 
-    await repo.saveGlobalParameters(params);
+    await repo.saveGlobalParameters(
+      ParametersSaveRequest(original: const [], updated: params),
+    );
     final loaded = await repo.loadGlobalParameters();
 
     expect(loaded.length, 2);
@@ -57,58 +62,59 @@ void main() {
     expect(loaded[1].allowedValues, ['Red', 'Blue']);
   });
 
-  test('concurrent saves serialize without data loss', () async {
+  test('concurrent saves detect conflicts without corruption', () async {
     final repoA = LocalStandardsRepo();
     final repoB = LocalStandardsRepo();
     const code = 'CONCURRENT_STD';
 
-    final futures = <Future<void>>[];
-    for (var i = 0; i < 20; i++) {
-      futures.add(
-        repoA.saveStandard(
-          StandardDef(
-            code: code,
-            name: 'RepoA-$i',
-            parameters: [
-              ParameterDef(key: 'A-$i', type: ParamType.text),
-            ],
-          ),
-        ),
-      );
-      futures.add(
-        repoB.saveStandard(
-          StandardDef(
-            code: code,
-            name: 'RepoB-$i',
-            parameters: [
-              ParameterDef(key: 'B-$i', type: ParamType.text),
-            ],
-          ),
-        ),
-      );
-    }
+    final initial = StandardDef(
+      code: code,
+      name: 'Base',
+      parameters: [ParameterDef(key: 'BaseParam', type: ParamType.text)],
+    );
 
-    await Future.wait(futures);
+    final baseResult = await repoA.saveStandard(
+      StandardSaveRequest(original: null, updated: initial),
+    );
+    expect(baseResult.didSave, isTrue);
 
+    final original = baseResult.merged!;
+    final updateA = StandardDef(
+      code: code,
+      name: 'RepoA-update',
+      parameters: [ParameterDef(key: 'A', type: ParamType.text)],
+    );
+    final updateB = StandardDef(
+      code: code,
+      name: 'RepoB-update',
+      parameters: [ParameterDef(key: 'B', type: ParamType.text)],
+    );
+
+    final results = await Future.wait([
+      repoA.saveStandard(
+        StandardSaveRequest(original: original, updated: updateA),
+      ),
+      repoB.saveStandard(
+        StandardSaveRequest(original: original, updated: updateB),
+      ),
+    ]);
+
+    final successes = results.where((r) => r.didSave).toList();
+    final conflicts = results.where((r) => r.hasConflicts).toList();
+    expect(successes, hasLength(1));
+    expect(conflicts, hasLength(1));
+
+    final saved = successes.single.merged!;
     final standards = await repoA.listStandards();
     expect(standards, hasLength(1));
     final standard = standards.single;
     expect(standard.code, code);
-    expect(
-      standard.name,
-      anyOf([
-        for (var i = 0; i < 20; i++) 'RepoA-$i',
-        for (var i = 0; i < 20; i++) 'RepoB-$i',
-      ]),
-    );
-    expect(standard.parameters, hasLength(1));
-    expect(
-      standard.parameters.single.key,
-      anyOf([
-        for (var i = 0; i < 20; i++) 'A-$i',
-        for (var i = 0; i < 20; i++) 'B-$i',
-      ]),
-    );
+    expect(standard.name, saved.name);
+    expect(standard.parameters.single.key, saved.parameters.single.key);
+
+    final conflict = conflicts.single.conflict;
+    expect(conflict, isNotNull);
+    expect(conflict!.type, StandardSaveConflictType.updatedRemotely);
 
     final file = File('${tempDir.path}/bom_data/standards/$code.json');
     expect(await file.exists(), isTrue);

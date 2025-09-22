@@ -80,6 +80,17 @@ class LocalStandardsRepo implements StandardsRepo {
     return File('${r.path}/standards/$code.json');
   }
 
+  Future<StandardDef?> _readStandardIfExists(File file) async {
+    if (!await file.exists()) return null;
+    final txt = await file.readAsString();
+    if (txt.trim().isEmpty) return null;
+    final decoded = jsonDecode(txt);
+    if (decoded is Map<String, dynamic>) {
+      return StandardDef.fromJson(decoded);
+    }
+    return null;
+  }
+
   Future<File> _parametersFile() async {
     final r = await _ensureRoot();
     return File('${r.path}/parameters.json');
@@ -140,15 +151,36 @@ class LocalStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> saveStandard(StandardDef std) async {
-    final f = await _stdFile(std.code);
-    await _withFileLock(f, () async {
-      if (await f.exists()) {
-        await f.readAsString();
+  Future<StandardSaveResult> saveStandard(StandardSaveRequest request) async {
+    final updated = request.updated;
+    final f = await _stdFile(updated.code);
+    return _withFileLock(f, () async {
+      final remote = await _readStandardIfExists(f);
+      final plan = LocalStandardsRepo.planStandardMerge(
+        original: request.original,
+        updated: updated,
+        remote: remote,
+      );
+
+      var wroteFile = false;
+      if (plan.conflict == null && plan.needsWrite && plan.finalStandard != null) {
+        final tmp = File('${f.path}.tmp');
+        await tmp.writeAsString(
+          jsonEncode(plan.finalStandard!.toJson()),
+          flush: true,
+        );
+        await tmp.rename(f.path);
+        wroteFile = true;
       }
-      final tmp = File('${f.path}.tmp');
-      await tmp.writeAsString(jsonEncode(std.toJson()), flush: true);
-      await tmp.rename(f.path);
+
+      return StandardSaveResult(
+        merged: plan.finalStandard,
+        conflict: plan.conflict,
+        wroteFile: wroteFile,
+        alreadyUpToDate: plan.conflict == null && !plan.needsWrite
+            ? plan.alreadyUpToDate
+            : false,
+      );
     });
   }
 
@@ -179,18 +211,50 @@ class LocalStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> saveGlobalParameters(List<ParameterDef> parameters) async {
+  Future<ParametersSaveResult> saveGlobalParameters(
+      ParametersSaveRequest request) async {
     final f = await _parametersFile();
-    await _withFileLock(f, () async {
+    return _withFileLock(f, () async {
+      final existing = <ParameterDef>[];
       if (await f.exists()) {
-        await f.readAsString();
+        final txt = await f.readAsString();
+        if (txt.trim().isNotEmpty) {
+          final decoded = jsonDecode(txt);
+          if (decoded is List) {
+            for (final entry in decoded) {
+              if (entry is Map) {
+                existing.add(
+                  ParameterDef.fromJson(entry.cast<String, dynamic>()),
+                );
+              }
+            }
+          }
+        }
       }
-      final tmp = File('${f.path}.tmp');
-      await tmp.writeAsString(
-        jsonEncode(parameters.map((e) => e.toJson()).toList()),
-        flush: true,
+
+      final plan = LocalStandardsRepo.planParametersMerge(
+        original: request.original,
+        updated: request.updated,
+        remote: existing,
       );
-      await tmp.rename(f.path);
+
+      var wroteFile = false;
+      if (plan.conflicts.isEmpty && plan.needsWrite) {
+        final tmp = File('${f.path}.tmp');
+        await tmp.writeAsString(
+          jsonEncode(plan.merged.map((e) => e.toJson()).toList()),
+          flush: true,
+        );
+        await tmp.rename(f.path);
+        wroteFile = true;
+      }
+
+      return ParametersSaveResult(
+        merged: plan.merged,
+        conflicts: plan.conflicts,
+        remoteChanges: plan.remoteChanges,
+        wroteFile: wroteFile,
+      );
     });
   }
 
@@ -213,19 +277,52 @@ class LocalStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> saveGlobalDynamicComponents(
-      List<DynamicComponentDef> components) async {
+  Future<DynamicComponentsSaveResult> saveGlobalDynamicComponents(
+      DynamicComponentsSaveRequest request) async {
     final f = await _dynamicComponentsFile();
-    await _withFileLock(f, () async {
+    return _withFileLock(f, () async {
+      final existing = <DynamicComponentDef>[];
       if (await f.exists()) {
-        await f.readAsString();
+        final txt = await f.readAsString();
+        if (txt.trim().isNotEmpty) {
+          final decoded = jsonDecode(txt);
+          if (decoded is List) {
+            for (final entry in decoded) {
+              if (entry is Map) {
+                existing.add(
+                  DynamicComponentDef.fromJson(
+                    entry.cast<String, dynamic>(),
+                  ),
+                );
+              }
+            }
+          }
+        }
       }
-      final tmp = File('${f.path}.tmp');
-      await tmp.writeAsString(
-        jsonEncode(components.map((e) => e.toJson()).toList()),
-        flush: true,
+
+      final plan = LocalStandardsRepo.planDynamicComponentsMerge(
+        original: request.original,
+        updated: request.updated,
+        remote: existing,
       );
-      await tmp.rename(f.path);
+
+      var wroteFile = false;
+      if (plan.conflicts.isEmpty && plan.needsWrite) {
+        final tmp = File('${f.path}.tmp');
+        await tmp.writeAsString(
+          jsonEncode(plan.merged.map((e) => e.toJson()).toList()),
+          flush: true,
+        );
+        await tmp.rename(f.path);
+        wroteFile = true;
+      }
+
+      return DynamicComponentsSaveResult(
+        merged: plan.merged,
+        conflicts: plan.conflicts,
+        remoteChanges: plan.remoteChanges,
+        wroteFile: wroteFile,
+      );
     });
   }
 
@@ -293,15 +390,92 @@ class LocalStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> saveCacheEntry(String key, Map<String, dynamic> entryJson) async {
-    final f = await _pendingFile(key);
-    await _withFileLock(f, () async {
+  Future<CacheSaveResult> saveCacheEntry(CacheSaveRequest request) async {
+    final f = await _pendingFile(request.key);
+    return _withFileLock(f, () async {
+      Map<String, dynamic>? remote;
       if (await f.exists()) {
-        await f.readAsString();
+        final txt = await f.readAsString();
+        if (txt.trim().isNotEmpty) {
+          final decoded = jsonDecode(txt);
+          if (decoded is Map) {
+            remote = decoded.cast<String, dynamic>();
+          }
+        }
       }
-      final tmp = File('${f.path}.tmp');
-      await tmp.writeAsString(jsonEncode(entryJson), flush: true);
-      await tmp.rename(f.path);
+
+      final original = request.original;
+      final updated = request.updated;
+      CacheConflict? conflict;
+      Map<String, dynamic>? finalEntry;
+      var needsWrite = false;
+      var alreadyUpToDate = false;
+
+      if (original == null) {
+        if (remote == null) {
+          finalEntry = Map<String, dynamic>.from(updated);
+          needsWrite = true;
+        } else if (_mapsDeepEqual(remote, updated)) {
+          finalEntry = remote;
+          alreadyUpToDate = true;
+        } else {
+          conflict = CacheConflict(
+            key: request.key,
+            type: CacheConflictType.alreadyExists,
+            original: null,
+            local: Map<String, dynamic>.from(updated),
+            remote: remote,
+          );
+          finalEntry = remote;
+        }
+      } else {
+        if (remote == null) {
+          conflict = CacheConflict(
+            key: request.key,
+            type: CacheConflictType.deletedRemotely,
+            original: Map<String, dynamic>.from(original),
+            local: Map<String, dynamic>.from(updated),
+            remote: null,
+          );
+        } else if (_mapsDeepEqual(remote, original)) {
+          if (_mapsDeepEqual(updated, original)) {
+            finalEntry = remote;
+            alreadyUpToDate = true;
+          } else {
+            finalEntry = Map<String, dynamic>.from(updated);
+            needsWrite = true;
+          }
+        } else if (_mapsDeepEqual(remote, updated)) {
+          finalEntry = remote;
+          alreadyUpToDate = true;
+        } else {
+          conflict = CacheConflict(
+            key: request.key,
+            type: CacheConflictType.updatedRemotely,
+            original: Map<String, dynamic>.from(original),
+            local: Map<String, dynamic>.from(updated),
+            remote: remote,
+          );
+          finalEntry = remote;
+        }
+      }
+
+      var wroteFile = false;
+      if (conflict == null && needsWrite && finalEntry != null) {
+        final tmp = File('${f.path}.tmp');
+        await tmp.writeAsString(jsonEncode(finalEntry), flush: true);
+        await tmp.rename(f.path);
+        wroteFile = true;
+      }
+
+      return CacheSaveResult(
+        key: request.key,
+        merged: finalEntry,
+        conflict: conflict,
+        wroteFile: wroteFile,
+        alreadyUpToDate:
+            conflict == null && !needsWrite ? alreadyUpToDate : false,
+      );
     });
   }
 
@@ -360,6 +534,404 @@ class LocalStandardsRepo implements StandardsRepo {
         await f.delete();
       }
     });
+  }
+
+  @visibleForTesting
+  static StandardMergePlan planStandardMerge({
+    required StandardDef? original,
+    required StandardDef updated,
+    required StandardDef? remote,
+  }) {
+    if (original == null) {
+      if (remote == null) {
+        return StandardMergePlan(
+          finalStandard: updated,
+          conflict: null,
+          needsWrite: true,
+        );
+      }
+      if (_standardsEqual(remote, updated)) {
+        return StandardMergePlan(
+          finalStandard: remote,
+          conflict: null,
+          needsWrite: false,
+          alreadyUpToDate: true,
+        );
+      }
+      return StandardMergePlan(
+        finalStandard: remote,
+        conflict: StandardSaveConflict(
+          code: updated.code,
+          type: StandardSaveConflictType.alreadyExists,
+          original: null,
+          local: updated,
+          remote: remote,
+        ),
+        needsWrite: false,
+      );
+    }
+
+    if (remote == null) {
+      return StandardMergePlan(
+        finalStandard: null,
+        conflict: StandardSaveConflict(
+          code: updated.code,
+          type: StandardSaveConflictType.deletedRemotely,
+          original: original,
+          local: updated,
+          remote: null,
+        ),
+        needsWrite: false,
+      );
+    }
+
+    if (_standardsEqual(remote, original)) {
+      if (_standardsEqual(updated, original)) {
+        return StandardMergePlan(
+          finalStandard: remote,
+          conflict: null,
+          needsWrite: false,
+          alreadyUpToDate: true,
+        );
+      }
+      return StandardMergePlan(
+        finalStandard: updated,
+        conflict: null,
+        needsWrite: true,
+      );
+    }
+
+    if (_standardsEqual(remote, updated)) {
+      return StandardMergePlan(
+        finalStandard: remote,
+        conflict: null,
+        needsWrite: false,
+        alreadyUpToDate: true,
+      );
+    }
+
+    return StandardMergePlan(
+      finalStandard: remote,
+      conflict: StandardSaveConflict(
+        code: updated.code,
+        type: StandardSaveConflictType.updatedRemotely,
+        original: original,
+        local: updated,
+        remote: remote,
+      ),
+      needsWrite: false,
+    );
+  }
+
+  @visibleForTesting
+  static ParameterMergePlan planParametersMerge({
+    required List<ParameterDef> original,
+    required List<ParameterDef> updated,
+    required List<ParameterDef> remote,
+  }) {
+    final originalMap = _parameterMap(original);
+    final localMap = _parameterMap(updated);
+    final remoteMap = _parameterMap(remote);
+
+    final mergedMap = <String, ParameterDef>{};
+    final conflicts = <ParameterConflict>[];
+    final allKeys = <String>{}
+      ..addAll(originalMap.keys)
+      ..addAll(localMap.keys)
+      ..addAll(remoteMap.keys);
+
+    for (final key in allKeys) {
+      final orig = originalMap[key];
+      final local = localMap[key];
+      final remoteEntry = remoteMap[key];
+
+      if (orig == null) {
+        if (local != null && remoteEntry != null) {
+          if (_parametersEqual(local, remoteEntry)) {
+            mergedMap[key] = remoteEntry;
+          } else {
+            conflicts.add(
+              ParameterConflict(
+                key: local.key.isNotEmpty ? local.key : remoteEntry.key,
+                type: ParameterConflictType.addition,
+                fields: const {'entry'},
+                original: orig,
+                local: local,
+                remote: remoteEntry,
+              ),
+            );
+          }
+        } else if (local != null) {
+          mergedMap[key] = local;
+        } else if (remoteEntry != null) {
+          mergedMap[key] = remoteEntry;
+        }
+        continue;
+      }
+
+      if (local == null && remoteEntry == null) {
+        continue;
+      }
+
+      if (local == null) {
+        if (remoteEntry == null) {
+          continue;
+        }
+        if (_parametersEqual(remoteEntry, orig)) {
+          continue;
+        }
+        conflicts.add(
+          ParameterConflict(
+            key: orig.key,
+            type: ParameterConflictType.removal,
+            fields: const {'entry'},
+            original: orig,
+            local: local,
+            remote: remoteEntry,
+          ),
+        );
+        continue;
+      }
+
+      if (remoteEntry == null) {
+        if (_parametersEqual(local, orig)) {
+          continue;
+        }
+        conflicts.add(
+          ParameterConflict(
+            key: local.key.isNotEmpty ? local.key : orig.key,
+            type: ParameterConflictType.removal,
+            fields: const {'entry'},
+            original: orig,
+            local: local,
+            remote: remoteEntry,
+          ),
+        );
+        continue;
+      }
+
+      final localChanged = _parameterChangedFields(orig, local);
+      final remoteChanged = _parameterChangedFields(orig, remoteEntry);
+
+      if (localChanged.isEmpty && remoteChanged.isEmpty) {
+        mergedMap[key] = remoteEntry;
+        continue;
+      }
+
+      if (remoteChanged.isEmpty) {
+        mergedMap[key] = local;
+        continue;
+      }
+
+      if (localChanged.isEmpty) {
+        mergedMap[key] = remoteEntry;
+        continue;
+      }
+
+      final intersection = localChanged.intersection(remoteChanged);
+      if (intersection.isNotEmpty) {
+        conflicts.add(
+          ParameterConflict(
+            key: local.key.isNotEmpty ? local.key : remoteEntry.key,
+            type: ParameterConflictType.field,
+            fields: intersection,
+            original: orig,
+            local: local,
+            remote: remoteEntry,
+          ),
+        );
+        continue;
+      }
+
+      mergedMap[key] = _mergeParameter(remoteEntry, local, localChanged);
+    }
+
+    if (conflicts.isNotEmpty) {
+      final remoteSorted = _sortedParameters(remote);
+      final remoteChanges = _detectParameterRemoteChanges(
+        finalMap: remoteMap,
+        localMap: localMap,
+        originalMap: originalMap,
+      );
+      return ParameterMergePlan(
+        merged: remoteSorted,
+        conflicts: conflicts,
+        remoteChanges: remoteChanges,
+        needsWrite: false,
+      );
+    }
+
+    final mergedList = _sortedParameters(mergedMap.values.toList());
+    final remoteSorted = _sortedParameters(remote);
+    final needsWrite = !_parameterListsEqual(mergedList, remoteSorted);
+    final remoteChanges = _detectParameterRemoteChanges(
+      finalMap: mergedMap,
+      localMap: localMap,
+      originalMap: originalMap,
+    );
+
+    return ParameterMergePlan(
+      merged: mergedList,
+      conflicts: const [],
+      remoteChanges: remoteChanges,
+      needsWrite: needsWrite,
+    );
+  }
+
+  @visibleForTesting
+  static DynamicComponentsMergePlan planDynamicComponentsMerge({
+    required List<DynamicComponentDef> original,
+    required List<DynamicComponentDef> updated,
+    required List<DynamicComponentDef> remote,
+  }) {
+    final originalMap = _dynamicComponentMap(original);
+    final localMap = _dynamicComponentMap(updated);
+    final remoteMap = _dynamicComponentMap(remote);
+
+    final mergedMap = <String, DynamicComponentDef>{};
+    final conflicts = <DynamicComponentConflict>[];
+    final allKeys = <String>{}
+      ..addAll(originalMap.keys)
+      ..addAll(localMap.keys)
+      ..addAll(remoteMap.keys);
+
+    for (final key in allKeys) {
+      final orig = originalMap[key];
+      final local = localMap[key];
+      final remoteEntry = remoteMap[key];
+
+      if (orig == null) {
+        if (local != null && remoteEntry != null) {
+          if (_dynamicComponentsEqual(local, remoteEntry)) {
+            mergedMap[key] = remoteEntry;
+          } else {
+            conflicts.add(
+              DynamicComponentConflict(
+                name: local.name.isNotEmpty ? local.name : remoteEntry.name,
+                type: DynamicComponentConflictType.addition,
+                fields: const {'entry'},
+                original: orig,
+                local: local,
+                remote: remoteEntry,
+              ),
+            );
+          }
+        } else if (local != null) {
+          mergedMap[key] = local;
+        } else if (remoteEntry != null) {
+          mergedMap[key] = remoteEntry;
+        }
+        continue;
+      }
+
+      if (local == null && remoteEntry == null) {
+        continue;
+      }
+
+      if (local == null) {
+        if (remoteEntry == null) {
+          continue;
+        }
+        if (_dynamicComponentsEqual(remoteEntry, orig)) {
+          continue;
+        }
+        conflicts.add(
+          DynamicComponentConflict(
+            name: orig.name,
+            type: DynamicComponentConflictType.removal,
+            fields: const {'entry'},
+            original: orig,
+            local: local,
+            remote: remoteEntry,
+          ),
+        );
+        continue;
+      }
+
+      if (remoteEntry == null) {
+        if (_dynamicComponentsEqual(local, orig)) {
+          continue;
+        }
+        conflicts.add(
+          DynamicComponentConflict(
+            name: local.name.isNotEmpty ? local.name : orig.name,
+            type: DynamicComponentConflictType.removal,
+            fields: const {'entry'},
+            original: orig,
+            local: local,
+            remote: remoteEntry,
+          ),
+        );
+        continue;
+      }
+
+      final localChanged = _dynamicComponentChangedFields(orig, local);
+      final remoteChanged = _dynamicComponentChangedFields(orig, remoteEntry);
+
+      if (localChanged.isEmpty && remoteChanged.isEmpty) {
+        mergedMap[key] = remoteEntry;
+        continue;
+      }
+
+      if (remoteChanged.isEmpty) {
+        mergedMap[key] = local;
+        continue;
+      }
+
+      if (localChanged.isEmpty) {
+        mergedMap[key] = remoteEntry;
+        continue;
+      }
+
+      final intersection = localChanged.intersection(remoteChanged);
+      if (intersection.isNotEmpty) {
+        conflicts.add(
+          DynamicComponentConflict(
+            name: local.name.isNotEmpty ? local.name : remoteEntry.name,
+            type: DynamicComponentConflictType.field,
+            fields: intersection,
+            original: orig,
+            local: local,
+            remote: remoteEntry,
+          ),
+        );
+        continue;
+      }
+
+      mergedMap[key] =
+          _mergeDynamicComponent(remoteEntry, local, localChanged);
+    }
+
+    if (conflicts.isNotEmpty) {
+      final remoteSorted = _sortedDynamicComponents(remote);
+      final remoteChanges = _detectDynamicRemoteChanges(
+        finalMap: remoteMap,
+        localMap: localMap,
+        originalMap: originalMap,
+      );
+      return DynamicComponentsMergePlan(
+        merged: remoteSorted,
+        conflicts: conflicts,
+        remoteChanges: remoteChanges,
+        needsWrite: false,
+      );
+    }
+
+    final mergedList = _sortedDynamicComponents(mergedMap.values.toList());
+    final remoteSorted = _sortedDynamicComponents(remote);
+    final needsWrite = !_dynamicComponentListsEqual(mergedList, remoteSorted);
+    final remoteChanges = _detectDynamicRemoteChanges(
+      finalMap: mergedMap,
+      localMap: localMap,
+      originalMap: originalMap,
+    );
+
+    return DynamicComponentsMergePlan(
+      merged: mergedList,
+      conflicts: const [],
+      remoteChanges: remoteChanges,
+      needsWrite: needsWrite,
+    );
   }
 
   @visibleForTesting
@@ -518,6 +1090,48 @@ class LocalStandardsRepo implements StandardsRepo {
   }
 }
 
+class StandardMergePlan {
+  final StandardDef? finalStandard;
+  final StandardSaveConflict? conflict;
+  final bool needsWrite;
+  final bool alreadyUpToDate;
+
+  const StandardMergePlan({
+    required this.finalStandard,
+    required this.conflict,
+    required this.needsWrite,
+    this.alreadyUpToDate = false,
+  });
+}
+
+class ParameterMergePlan {
+  final List<ParameterDef> merged;
+  final List<ParameterConflict> conflicts;
+  final Set<String> remoteChanges;
+  final bool needsWrite;
+
+  const ParameterMergePlan({
+    required this.merged,
+    required this.conflicts,
+    required this.remoteChanges,
+    required this.needsWrite,
+  });
+}
+
+class DynamicComponentsMergePlan {
+  final List<DynamicComponentDef> merged;
+  final List<DynamicComponentConflict> conflicts;
+  final Set<String> remoteChanges;
+  final bool needsWrite;
+
+  const DynamicComponentsMergePlan({
+    required this.merged,
+    required this.conflicts,
+    required this.remoteChanges,
+    required this.needsWrite,
+  });
+}
+
 class FlaggedMaterialsMergePlan {
   final List<FlaggedMaterial> merged;
   final List<FlaggedMaterialConflict> conflicts;
@@ -530,6 +1144,282 @@ class FlaggedMaterialsMergePlan {
     required this.remoteChanges,
     required this.needsWrite,
   });
+}
+
+String _canonicalJsonString(Object? value) =>
+    jsonEncode(_canonicalizeJson(value));
+
+dynamic _canonicalizeJson(dynamic value) {
+  if (value is Map) {
+    final sortedKeys = value.keys.map((e) => e.toString()).toList()
+      ..sort((a, b) => a.compareTo(b));
+    return {
+      for (final key in sortedKeys)
+        key: _canonicalizeJson(value[key])
+    };
+  }
+  if (value is List) {
+    return value.map(_canonicalizeJson).toList();
+  }
+  return value;
+}
+
+bool _mapsDeepEqual(Map<String, dynamic>? a, Map<String, dynamic>? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return a == null && b == null;
+  return _canonicalJsonString(a) == _canonicalJsonString(b);
+}
+
+bool _standardsEqual(StandardDef? a, StandardDef? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return a == null && b == null;
+  return _canonicalJsonString(a.toJson()) ==
+      _canonicalJsonString(b.toJson());
+}
+
+String _normalizeParamKey(String key) => key.trim().toLowerCase();
+
+Map<String, ParameterDef> _parameterMap(List<ParameterDef> list) {
+  final map = <String, ParameterDef>{};
+  for (final param in list) {
+    map[_normalizeParamKey(param.key)] = param;
+  }
+  return map;
+}
+
+bool _parametersEqual(ParameterDef? a, ParameterDef? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return a == null && b == null;
+  return a.key == b.key &&
+      a.type == b.type &&
+      a.unit == b.unit &&
+      listEquals(a.allowedValues, b.allowedValues) &&
+      a.required == b.required;
+}
+
+dynamic _parameterFieldValue(ParameterDef? def, String field) {
+  if (def == null) return null;
+  switch (field) {
+    case 'key':
+      return def.key;
+    case 'type':
+      return def.type;
+    case 'unit':
+      return def.unit;
+    case 'allowedValues':
+      return def.allowedValues;
+    case 'required':
+      return def.required;
+  }
+  return null;
+}
+
+Set<String> _parameterChangedFields(
+  ParameterDef? base,
+  ParameterDef? other,
+) {
+  const fields = {'key', 'type', 'unit', 'allowedValues', 'required'};
+  if (base == null || other == null) {
+    return {...fields};
+  }
+  final changed = <String>{};
+  for (final field in fields) {
+    if (!_valueEquals(
+      _parameterFieldValue(base, field),
+      _parameterFieldValue(other, field),
+    )) {
+      changed.add(field);
+    }
+  }
+  return changed;
+}
+
+ParameterDef _mergeParameter(
+  ParameterDef remote,
+  ParameterDef local,
+  Set<String> localChanged,
+) {
+  return ParameterDef(
+    key: localChanged.contains('key') ? local.key : remote.key,
+    type: localChanged.contains('type') ? local.type : remote.type,
+    unit: localChanged.contains('unit') ? local.unit : remote.unit,
+    allowedValues: localChanged.contains('allowedValues')
+        ? List<String>.from(local.allowedValues)
+        : List<String>.from(remote.allowedValues),
+    required:
+        localChanged.contains('required') ? local.required : remote.required,
+  );
+}
+
+List<ParameterDef> _sortedParameters(List<ParameterDef> list) {
+  final copy = List<ParameterDef>.from(list);
+  copy.sort(
+    (a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()),
+  );
+  return copy;
+}
+
+bool _parameterListsEqual(List<ParameterDef> a, List<ParameterDef> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (!_parametersEqual(a[i], b[i])) return false;
+  }
+  return true;
+}
+
+Set<String> _detectParameterRemoteChanges({
+  required Map<String, ParameterDef> finalMap,
+  required Map<String, ParameterDef> localMap,
+  required Map<String, ParameterDef> originalMap,
+}) {
+  final keys = <String>{}
+    ..addAll(finalMap.keys)
+    ..addAll(localMap.keys);
+  final changed = <String>{};
+  for (final key in keys) {
+    final finalEntry = finalMap[key];
+    final localEntry = localMap[key];
+    if (!_parametersEqual(finalEntry, localEntry)) {
+      final label = finalEntry?.key ??
+          localEntry?.key ??
+          originalMap[key]?.key ??
+          key;
+      changed.add(label);
+    }
+  }
+  return changed;
+}
+
+String _normalizeComponentName(String name) => name.trim().toLowerCase();
+
+Map<String, DynamicComponentDef> _dynamicComponentMap(
+    List<DynamicComponentDef> list) {
+  final map = <String, DynamicComponentDef>{};
+  for (final component in list) {
+    map[_normalizeComponentName(component.name)] = component;
+  }
+  return map;
+}
+
+bool _rulesDeepEqual(List<RuleDef>? a, List<RuleDef>? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return a == null && b == null;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (_canonicalJsonString(a[i].toJson()) !=
+        _canonicalJsonString(b[i].toJson())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _dynamicComponentsEqual(
+  DynamicComponentDef? a,
+  DynamicComponentDef? b,
+) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return a == null && b == null;
+  return a.name == b.name &&
+      a.selectionStrategy == b.selectionStrategy &&
+      _rulesDeepEqual(a.rules, b.rules);
+}
+
+dynamic _dynamicComponentFieldValue(
+  DynamicComponentDef? def,
+  String field,
+) {
+  if (def == null) return null;
+  switch (field) {
+    case 'name':
+      return def.name;
+    case 'selectionStrategy':
+      return def.selectionStrategy;
+    case 'rules':
+      return def.rules.map((rule) => _canonicalJsonString(rule.toJson())).toList();
+  }
+  return null;
+}
+
+Set<String> _dynamicComponentChangedFields(
+  DynamicComponentDef? base,
+  DynamicComponentDef? other,
+) {
+  const fields = {'name', 'selectionStrategy', 'rules'};
+  if (base == null || other == null) {
+    return {...fields};
+  }
+  final changed = <String>{};
+  for (final field in fields) {
+    if (!_valueEquals(
+      _dynamicComponentFieldValue(base, field),
+      _dynamicComponentFieldValue(other, field),
+    )) {
+      changed.add(field);
+    }
+  }
+  return changed;
+}
+
+DynamicComponentDef _mergeDynamicComponent(
+  DynamicComponentDef remote,
+  DynamicComponentDef local,
+  Set<String> localChanged,
+) {
+  return DynamicComponentDef(
+    name: localChanged.contains('name') ? local.name : remote.name,
+    selectionStrategy: localChanged.contains('selectionStrategy')
+        ? local.selectionStrategy
+        : remote.selectionStrategy,
+    rules: localChanged.contains('rules')
+        ? List<RuleDef>.from(local.rules)
+        : List<RuleDef>.from(remote.rules),
+  );
+}
+
+List<DynamicComponentDef> _sortedDynamicComponents(
+    List<DynamicComponentDef> list) {
+  final copy = List<DynamicComponentDef>.from(list);
+  copy.sort(
+    (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+  );
+  return copy;
+}
+
+bool _dynamicComponentListsEqual(
+  List<DynamicComponentDef> a,
+  List<DynamicComponentDef> b,
+) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (!_dynamicComponentsEqual(a[i], b[i])) return false;
+  }
+  return true;
+}
+
+Set<String> _detectDynamicRemoteChanges({
+  required Map<String, DynamicComponentDef> finalMap,
+  required Map<String, DynamicComponentDef> localMap,
+  required Map<String, DynamicComponentDef> originalMap,
+}) {
+  final keys = <String>{}
+    ..addAll(finalMap.keys)
+    ..addAll(localMap.keys);
+  final changed = <String>{};
+  for (final key in keys) {
+    final finalEntry = finalMap[key];
+    final localEntry = localMap[key];
+    if (!_dynamicComponentsEqual(finalEntry, localEntry)) {
+      final label = finalEntry?.name ??
+          localEntry?.name ??
+          originalMap[key]?.name ??
+          key;
+      changed.add(label);
+    }
+  }
+  return changed;
 }
 
 const _flaggedMaterialFields = <String>{
@@ -619,6 +1509,24 @@ dynamic _fieldValue(FlaggedMaterial? material, String field) {
 bool _valueEquals(dynamic a, dynamic b) {
   if (a is DateTime && b is DateTime) {
     return a.isAtSameMomentAs(b);
+  }
+  if (a is List && b is List) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!_valueEquals(a[i], b[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (a is Map && b is Map) {
+    if (a.length != b.length) return false;
+    for (final key in a.keys) {
+      if (!b.containsKey(key) || !_valueEquals(a[key], b[key])) {
+        return false;
+      }
+    }
+    return true;
   }
   return a == b;
 }
