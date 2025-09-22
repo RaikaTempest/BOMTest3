@@ -123,12 +123,20 @@ class WebStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> saveFlaggedMaterials(List<FlaggedMaterial> materials) async {
+  Future<FlaggedMaterialsSaveResult> saveFlaggedMaterials(
+      FlaggedMaterialsSaveRequest request) async {
+    final items = request.updated;
     _setMap(
       _kFlaggedMaterials,
       {
-        'items': materials.map((e) => e.toJson()).toList(),
+        'items': items.map((e) => e.toJson()).toList(),
       },
+    );
+    return FlaggedMaterialsSaveResult(
+      merged: List<FlaggedMaterial>.from(items),
+      conflicts: const [],
+      remoteChanges: const {},
+      wroteFile: true,
     );
   }
 

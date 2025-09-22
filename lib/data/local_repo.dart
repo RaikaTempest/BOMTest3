@@ -1,6 +1,7 @@
 // lib/data/local_repo.dart
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../core/models.dart';
 import 'repo.dart';
@@ -244,18 +245,50 @@ class LocalStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> saveFlaggedMaterials(List<FlaggedMaterial> materials) async {
+  Future<FlaggedMaterialsSaveResult> saveFlaggedMaterials(
+      FlaggedMaterialsSaveRequest request) async {
     final f = await _flaggedMaterialsFile();
-    await _withFileLock(f, () async {
+    return _withFileLock(f, () async {
+      final existing = <FlaggedMaterial>[];
       if (await f.exists()) {
-        await f.readAsString();
+        final txt = await f.readAsString();
+        if (txt.trim().isNotEmpty) {
+          final decoded = jsonDecode(txt);
+          if (decoded is List) {
+            for (final entry in decoded) {
+              if (entry is Map) {
+                existing.add(
+                  FlaggedMaterial.fromJson(entry.cast<String, dynamic>()),
+                );
+              }
+            }
+          }
+        }
       }
-      final tmp = File('${f.path}.tmp');
-      await tmp.writeAsString(
-        jsonEncode(materials.map((e) => e.toJson()).toList()),
-        flush: true,
+
+      final plan = LocalStandardsRepo.planFlaggedMaterialsMerge(
+        original: request.original,
+        updated: request.updated,
+        remote: existing,
       );
-      await tmp.rename(f.path);
+
+      var wroteFile = false;
+      if (plan.conflicts.isEmpty && plan.needsWrite) {
+        final tmp = File('${f.path}.tmp');
+        await tmp.writeAsString(
+          jsonEncode(plan.merged.map((e) => e.toJson()).toList()),
+          flush: true,
+        );
+        await tmp.rename(f.path);
+        wroteFile = true;
+      }
+
+      return FlaggedMaterialsSaveResult(
+        merged: plan.merged,
+        conflicts: plan.conflicts,
+        remoteChanges: plan.remoteChanges,
+        wroteFile: wroteFile,
+      );
     });
   }
 
@@ -328,4 +361,317 @@ class LocalStandardsRepo implements StandardsRepo {
       }
     });
   }
+
+  @visibleForTesting
+  static FlaggedMaterialsMergePlan planFlaggedMaterialsMerge({
+    required List<FlaggedMaterial> original,
+    required List<FlaggedMaterial> updated,
+    required List<FlaggedMaterial> remote,
+  }) {
+    final originalMap = _materialMap(original);
+    final localMap = _materialMap(updated);
+    final remoteMap = _materialMap(remote);
+
+    final mergedMap = <String, FlaggedMaterial>{};
+    final conflicts = <FlaggedMaterialConflict>[];
+    final allKeys = <String>{}
+      ..addAll(originalMap.keys)
+      ..addAll(localMap.keys)
+      ..addAll(remoteMap.keys);
+
+    for (final key in allKeys) {
+      final orig = originalMap[key];
+      final local = localMap[key];
+      final remoteEntry = remoteMap[key];
+
+      if (orig == null) {
+        if (local != null && remoteEntry != null) {
+          if (_materialsEqual(local, remoteEntry)) {
+            mergedMap[key] = remoteEntry;
+          } else {
+            conflicts.add(
+              FlaggedMaterialConflict(
+                mm: local.mm.isNotEmpty ? local.mm : remoteEntry.mm,
+                type: FlaggedMaterialConflictType.addition,
+                fields: const {'entry'},
+                original: orig,
+                local: local,
+                remote: remoteEntry,
+              ),
+            );
+          }
+        } else if (local != null) {
+          mergedMap[key] = local;
+        } else if (remoteEntry != null) {
+          mergedMap[key] = remoteEntry;
+        }
+        continue;
+      }
+
+      if (local == null && remoteEntry == null) {
+        continue;
+      }
+
+      if (local == null) {
+        if (remoteEntry == null) {
+          continue;
+        }
+        if (_materialsEqual(remoteEntry, orig)) {
+          continue;
+        }
+        conflicts.add(
+          FlaggedMaterialConflict(
+            mm: orig.mm,
+            type: FlaggedMaterialConflictType.removal,
+            fields: const {'entry'},
+            original: orig,
+            local: local,
+            remote: remoteEntry,
+          ),
+        );
+        continue;
+      }
+
+      if (remoteEntry == null) {
+        if (_materialsEqual(local, orig)) {
+          continue;
+        }
+        conflicts.add(
+          FlaggedMaterialConflict(
+            mm: local.mm.isNotEmpty ? local.mm : orig.mm,
+            type: FlaggedMaterialConflictType.removal,
+            fields: const {'entry'},
+            original: orig,
+            local: local,
+            remote: remoteEntry,
+          ),
+        );
+        continue;
+      }
+
+      final localChanged = _changedFields(orig, local);
+      final remoteChanged = _changedFields(orig, remoteEntry);
+
+      if (localChanged.isEmpty && remoteChanged.isEmpty) {
+        mergedMap[key] = remoteEntry;
+        continue;
+      }
+
+      if (remoteChanged.isEmpty) {
+        mergedMap[key] = local;
+        continue;
+      }
+
+      if (localChanged.isEmpty) {
+        mergedMap[key] = remoteEntry;
+        continue;
+      }
+
+      final intersection = localChanged.intersection(remoteChanged);
+      if (intersection.isNotEmpty) {
+        conflicts.add(
+          FlaggedMaterialConflict(
+            mm: local.mm.isNotEmpty ? local.mm : remoteEntry.mm,
+            type: FlaggedMaterialConflictType.field,
+            fields: intersection,
+            original: orig,
+            local: local,
+            remote: remoteEntry,
+          ),
+        );
+        continue;
+      }
+
+      mergedMap[key] = _mergeEntries(remoteEntry, local, localChanged);
+    }
+
+    if (conflicts.isNotEmpty) {
+      final remoteSorted = _sortedMaterials(remote);
+      final remoteChanges = _detectRemoteChanges(
+        finalMap: remoteMap,
+        localMap: localMap,
+        originalMap: originalMap,
+      );
+      return FlaggedMaterialsMergePlan(
+        merged: remoteSorted,
+        conflicts: conflicts,
+        remoteChanges: remoteChanges,
+        needsWrite: false,
+      );
+    }
+
+    final mergedList = _sortedMaterials(mergedMap.values.toList());
+    final remoteSorted = _sortedMaterials(remote);
+    final needsWrite = !_listsEqual(mergedList, remoteSorted);
+    final remoteChanges = _detectRemoteChanges(
+      finalMap: mergedMap,
+      localMap: localMap,
+      originalMap: originalMap,
+    );
+
+    return FlaggedMaterialsMergePlan(
+      merged: mergedList,
+      conflicts: const [],
+      remoteChanges: remoteChanges,
+      needsWrite: needsWrite,
+    );
+  }
+}
+
+class FlaggedMaterialsMergePlan {
+  final List<FlaggedMaterial> merged;
+  final List<FlaggedMaterialConflict> conflicts;
+  final Set<String> remoteChanges;
+  final bool needsWrite;
+
+  const FlaggedMaterialsMergePlan({
+    required this.merged,
+    required this.conflicts,
+    required this.remoteChanges,
+    required this.needsWrite,
+  });
+}
+
+const _flaggedMaterialFields = <String>{
+  'mm',
+  'name',
+  'alternativeAvailable',
+  'alternativeMm',
+  'alternativeName',
+  'note',
+  'flaggedAt',
+  'flaggedBy',
+};
+
+String _normalizeMm(String mm) => mm.trim().toLowerCase();
+
+Map<String, FlaggedMaterial> _materialMap(List<FlaggedMaterial> list) {
+  final map = <String, FlaggedMaterial>{};
+  for (final material in list) {
+    map[_normalizeMm(material.mm)] = material;
+  }
+  return map;
+}
+
+FlaggedMaterial _mergeEntries(
+  FlaggedMaterial remote,
+  FlaggedMaterial local,
+  Set<String> localChanged,
+) {
+  return FlaggedMaterial(
+    mm: localChanged.contains('mm') ? local.mm : remote.mm,
+    name: localChanged.contains('name') ? local.name : remote.name,
+    alternativeAvailable: localChanged.contains('alternativeAvailable')
+        ? local.alternativeAvailable
+        : remote.alternativeAvailable,
+    alternativeMm: localChanged.contains('alternativeMm')
+        ? local.alternativeMm
+        : remote.alternativeMm,
+    alternativeName: localChanged.contains('alternativeName')
+        ? local.alternativeName
+        : remote.alternativeName,
+    note: localChanged.contains('note') ? local.note : remote.note,
+    flaggedAt:
+        localChanged.contains('flaggedAt') ? local.flaggedAt : remote.flaggedAt,
+    flaggedBy:
+        localChanged.contains('flaggedBy') ? local.flaggedBy : remote.flaggedBy,
+  );
+}
+
+Set<String> _changedFields(FlaggedMaterial? base, FlaggedMaterial? other) {
+  if (base == null || other == null) {
+    return {..._flaggedMaterialFields};
+  }
+  final changed = <String>{};
+  for (final field in _flaggedMaterialFields) {
+    final a = _fieldValue(base, field);
+    final b = _fieldValue(other, field);
+    if (!_valueEquals(a, b)) {
+      changed.add(field);
+    }
+  }
+  return changed;
+}
+
+dynamic _fieldValue(FlaggedMaterial? material, String field) {
+  if (material == null) return null;
+  switch (field) {
+    case 'mm':
+      return material.mm;
+    case 'name':
+      return material.name;
+    case 'alternativeAvailable':
+      return material.alternativeAvailable;
+    case 'alternativeMm':
+      return material.alternativeMm;
+    case 'alternativeName':
+      return material.alternativeName;
+    case 'note':
+      return material.note;
+    case 'flaggedAt':
+      return material.flaggedAt;
+    case 'flaggedBy':
+      return material.flaggedBy;
+  }
+  return null;
+}
+
+bool _valueEquals(dynamic a, dynamic b) {
+  if (a is DateTime && b is DateTime) {
+    return a.isAtSameMomentAs(b);
+  }
+  return a == b;
+}
+
+bool _materialsEqual(FlaggedMaterial? a, FlaggedMaterial? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return a == null && b == null;
+  for (final field in _flaggedMaterialFields) {
+    if (!_valueEquals(_fieldValue(a, field), _fieldValue(b, field))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+List<FlaggedMaterial> _sortedMaterials(List<FlaggedMaterial> list) {
+  final copy = List<FlaggedMaterial>.from(list);
+  copy.sort(
+    (a, b) => _normalizeMm(a.mm).compareTo(_normalizeMm(b.mm)),
+  );
+  return copy;
+}
+
+bool _listsEqual(List<FlaggedMaterial> a, List<FlaggedMaterial> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (!_materialsEqual(a[i], b[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+Set<String> _detectRemoteChanges({
+  required Map<String, FlaggedMaterial> finalMap,
+  required Map<String, FlaggedMaterial> localMap,
+  required Map<String, FlaggedMaterial> originalMap,
+}) {
+  final keys = <String>{}
+    ..addAll(finalMap.keys)
+    ..addAll(localMap.keys);
+  final changed = <String>{};
+  for (final key in keys) {
+    final finalEntry = finalMap[key];
+    final localEntry = localMap[key];
+    if (!_materialsEqual(finalEntry, localEntry)) {
+      final label = finalEntry?.mm ??
+          localEntry?.mm ??
+          originalMap[key]?.mm ??
+          key;
+      changed.add(label);
+    }
+  }
+  return changed;
 }
