@@ -7,6 +7,7 @@ class WebStandardsRepo implements StandardsRepo {
   static const _kStandards = 'bom_standards';
   static const _kParameters = 'bom_parameters';
   static const _kDynamicComponents = 'bom_dynamic_components';
+  static const _kFlaggedMaterials = 'bom_flagged_materials';
   static const _kPending = 'bom_cache_pending';
   static const _kApproved = 'bom_cache_approved';
 
@@ -100,6 +101,33 @@ class WebStandardsRepo implements StandardsRepo {
       _kDynamicComponents,
       {
         'items': components.map((e) => e.toJson()).toList(),
+      },
+    );
+  }
+
+  @override
+  Future<List<FlaggedMaterial>> loadFlaggedMaterials() async {
+    final raw = _getMap(_kFlaggedMaterials);
+    final list = <FlaggedMaterial>[];
+    final values = raw['items'];
+    if (values is List) {
+      for (final entry in values) {
+        if (entry is Map) {
+          list.add(
+            FlaggedMaterial.fromJson(entry.cast<String, dynamic>()),
+          );
+        }
+      }
+    }
+    return list;
+  }
+
+  @override
+  Future<void> saveFlaggedMaterials(List<FlaggedMaterial> materials) async {
+    _setMap(
+      _kFlaggedMaterials,
+      {
+        'items': materials.map((e) => e.toJson()).toList(),
       },
     );
   }

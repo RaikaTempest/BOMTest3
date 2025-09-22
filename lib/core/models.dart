@@ -94,6 +94,40 @@ class StaticComponent {
   Map<String, dynamic> toJson() => {'mm': mm, 'qty': qty};
 }
 
+class FlaggedMaterial {
+  final String mm;
+  final String reason;
+  final String? note;
+  final DateTime? flaggedAt;
+  final String? flaggedBy;
+
+  FlaggedMaterial({
+    required this.mm,
+    required this.reason,
+    this.note,
+    this.flaggedAt,
+    this.flaggedBy,
+  });
+
+  factory FlaggedMaterial.fromJson(Map<String, dynamic> j) => FlaggedMaterial(
+        mm: j['mm'] as String,
+        reason: j['reason'] as String? ?? '',
+        note: j['note'] as String?,
+        flaggedAt: j['flagged_at'] != null
+            ? DateTime.tryParse(j['flagged_at'] as String)
+            : null,
+        flaggedBy: j['flagged_by'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'mm': mm,
+        'reason': reason,
+        if (note != null) 'note': note,
+        if (flaggedAt != null) 'flagged_at': flaggedAt!.toIso8601String(),
+        if (flaggedBy != null) 'flagged_by': flaggedBy,
+      };
+}
+
 class OutputSpec {
   final String mm;
   final int? qty;
