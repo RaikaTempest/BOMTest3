@@ -7,7 +7,9 @@ import 'widgets/bom_scaffold.dart';
 import 'widgets/glass_container.dart';
 
 class FlaggedMaterialsScreen extends StatefulWidget {
-  const FlaggedMaterialsScreen({super.key});
+  final Future<StandardsRepo> Function()? repoBuilder;
+
+  const FlaggedMaterialsScreen({super.key, this.repoBuilder});
 
   @override
   State<FlaggedMaterialsScreen> createState() => _FlaggedMaterialsScreenState();
@@ -16,6 +18,7 @@ class FlaggedMaterialsScreen extends StatefulWidget {
 class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
   StandardsRepo? repo;
   List<FlaggedMaterial> materials = [];
+  List<FlaggedMaterial> _serverMaterials = [];
   final List<String> _materialIds = [];
   int _nextMaterialId = 0;
   bool _loading = true;
@@ -37,12 +40,14 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
 
   Future<void> _initRepo() async {
     try {
-      final loadedRepo = await createRepo();
+      final loader = widget.repoBuilder ?? createRepo;
+      final loadedRepo = await loader();
       final list = await loadedRepo.loadFlaggedMaterials();
       if (!mounted) return;
       setState(() {
         repo = loadedRepo;
         materials = list;
+        _serverMaterials = List<FlaggedMaterial>.from(list);
         _resetMaterialIds();
         _loading = false;
       });
@@ -51,6 +56,7 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
       setState(() {
         repo = null;
         materials = [];
+        _serverMaterials = [];
         _resetMaterialIds();
         _loading = false;
       });
@@ -127,20 +133,166 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
       }
 
       cleaned.sort((a, b) => a.mm.toLowerCase().compareTo(b.mm.toLowerCase()));
-      await repo.saveFlaggedMaterials(cleaned);
+      final result = await repo.saveFlaggedMaterials(
+        FlaggedMaterialsSaveRequest(
+          original: _serverMaterials,
+          updated: cleaned,
+        ),
+      );
       if (!mounted) return;
+
+      _serverMaterials = List<FlaggedMaterial>.from(result.merged);
+
+      if (!result.didSave) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Conflicts detected. Review the flagged materials list to continue.',
+            ),
+          ),
+        );
+        await _showConflictDialog(result);
+        return;
+      }
+
       setState(() {
-        materials = cleaned;
+        materials = result.merged;
         _resetMaterialIds();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Flagged materials saved.')),
-      );
+
+      if (result.hasRemoteChanges) {
+        _showMergeSnackBar(result.remoteChanges);
+      } else if (result.wroteFile) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Flagged materials saved.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No changes to save.')),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Save error: $e')),
       );
+    }
+  }
+
+  Future<void> _showConflictDialog(FlaggedMaterialsSaveResult result) async {
+    if (!mounted) return;
+    final shouldReload = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Conflicts detected'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Another session updated these materials. Resolve the conflicts below or reload the remote list.',
+                ),
+                const SizedBox(height: 12),
+                for (final conflict in result.conflicts)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(_describeConflict(conflict)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep editing'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reload remote data'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldReload == true && mounted) {
+      setState(() {
+        materials = List<FlaggedMaterial>.from(_serverMaterials);
+        _resetMaterialIds();
+      });
+    }
+  }
+
+  void _showMergeSnackBar(Set<String> mmList) {
+    final display = mmList.toList();
+    display.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final preview = display.length > 3
+        ? '${display.take(3).join(', ')} and ${display.length - 3} more'
+        : display.join(', ');
+    final message = display.isEmpty
+        ? 'Flagged materials saved.'
+        : 'Merged updates for: $preview';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: display.isEmpty
+            ? null
+            : SnackBarAction(
+                label: 'Review',
+                onPressed: () => _showMergeDetails(display),
+              ),
+      ),
+    );
+  }
+
+  void _showMergeDetails(List<String> mmList) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Merged updates'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'The following materials were updated with remote changes during the save:',
+                ),
+                const SizedBox(height: 12),
+                for (final mm in mmList)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text('• $mm'),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _describeConflict(FlaggedMaterialConflict conflict) {
+    final fields = conflict.fields.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final joinedFields = fields.isEmpty ? 'entry' : fields.join(', ');
+    switch (conflict.type) {
+      case FlaggedMaterialConflictType.addition:
+        return '${conflict.mm}: Added in multiple places. Review the entry before saving.';
+      case FlaggedMaterialConflictType.removal:
+        return '${conflict.mm}: Removed remotely while edited locally.';
+      case FlaggedMaterialConflictType.field:
+        return '${conflict.mm}: Conflicting changes to $joinedFields.';
     }
   }
 
