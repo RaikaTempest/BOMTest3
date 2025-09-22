@@ -104,6 +104,23 @@ class LocalStandardsRepo implements StandardsRepo {
     return File('${r.path}/cache/approved/$key.json');
   }
 
+  Future<T> _withFileLock<T>(File file, Future<T> Function() action) async {
+    final lockFile = File('${file.path}.lock');
+    RandomAccessFile? raf;
+    try {
+      raf = await lockFile.open(mode: FileMode.write);
+      await raf.lock(FileLock.blockingExclusive);
+      return await action();
+    } finally {
+      if (raf != null) {
+        try {
+          await raf.unlock();
+        } catch (_) {}
+        await raf.close();
+      }
+    }
+  }
+
   @override
   Future<List<StandardDef>> listStandards() async {
     final r = await _ensureRoot();
@@ -124,15 +141,25 @@ class LocalStandardsRepo implements StandardsRepo {
   @override
   Future<void> saveStandard(StandardDef std) async {
     final f = await _stdFile(std.code);
-    final tmp = File('${f.path}.tmp');
-    await tmp.writeAsString(jsonEncode(std.toJson()), flush: true);
-    await tmp.rename(f.path);
+    await _withFileLock(f, () async {
+      if (await f.exists()) {
+        await f.readAsString();
+      }
+      final tmp = File('${f.path}.tmp');
+      await tmp.writeAsString(jsonEncode(std.toJson()), flush: true);
+      await tmp.rename(f.path);
+    });
   }
 
   @override
   Future<void> deleteStandard(String code) async {
     final f = await _stdFile(code);
-    if (await f.exists()) await f.delete();
+    await _withFileLock(f, () async {
+      if (await f.exists()) {
+        await f.readAsString();
+        await f.delete();
+      }
+    });
   }
 
   @override
@@ -153,12 +180,17 @@ class LocalStandardsRepo implements StandardsRepo {
   @override
   Future<void> saveGlobalParameters(List<ParameterDef> parameters) async {
     final f = await _parametersFile();
-    final tmp = File('${f.path}.tmp');
-    await tmp.writeAsString(
-      jsonEncode(parameters.map((e) => e.toJson()).toList()),
-      flush: true,
-    );
-    await tmp.rename(f.path);
+    await _withFileLock(f, () async {
+      if (await f.exists()) {
+        await f.readAsString();
+      }
+      final tmp = File('${f.path}.tmp');
+      await tmp.writeAsString(
+        jsonEncode(parameters.map((e) => e.toJson()).toList()),
+        flush: true,
+      );
+      await tmp.rename(f.path);
+    });
   }
 
   @override
@@ -183,12 +215,17 @@ class LocalStandardsRepo implements StandardsRepo {
   Future<void> saveGlobalDynamicComponents(
       List<DynamicComponentDef> components) async {
     final f = await _dynamicComponentsFile();
-    final tmp = File('${f.path}.tmp');
-    await tmp.writeAsString(
-      jsonEncode(components.map((e) => e.toJson()).toList()),
-      flush: true,
-    );
-    await tmp.rename(f.path);
+    await _withFileLock(f, () async {
+      if (await f.exists()) {
+        await f.readAsString();
+      }
+      final tmp = File('${f.path}.tmp');
+      await tmp.writeAsString(
+        jsonEncode(components.map((e) => e.toJson()).toList()),
+        flush: true,
+      );
+      await tmp.rename(f.path);
+    });
   }
 
   @override
@@ -209,20 +246,30 @@ class LocalStandardsRepo implements StandardsRepo {
   @override
   Future<void> saveFlaggedMaterials(List<FlaggedMaterial> materials) async {
     final f = await _flaggedMaterialsFile();
-    final tmp = File('${f.path}.tmp');
-    await tmp.writeAsString(
-      jsonEncode(materials.map((e) => e.toJson()).toList()),
-      flush: true,
-    );
-    await tmp.rename(f.path);
+    await _withFileLock(f, () async {
+      if (await f.exists()) {
+        await f.readAsString();
+      }
+      final tmp = File('${f.path}.tmp');
+      await tmp.writeAsString(
+        jsonEncode(materials.map((e) => e.toJson()).toList()),
+        flush: true,
+      );
+      await tmp.rename(f.path);
+    });
   }
 
   @override
   Future<void> saveCacheEntry(String key, Map<String, dynamic> entryJson) async {
     final f = await _pendingFile(key);
-    final tmp = File('${f.path}.tmp');
-    await tmp.writeAsString(jsonEncode(entryJson), flush: true);
-    await tmp.rename(f.path);
+    await _withFileLock(f, () async {
+      if (await f.exists()) {
+        await f.readAsString();
+      }
+      final tmp = File('${f.path}.tmp');
+      await tmp.writeAsString(jsonEncode(entryJson), flush: true);
+      await tmp.rename(f.path);
+    });
   }
 
   @override
@@ -255,17 +302,30 @@ class LocalStandardsRepo implements StandardsRepo {
   @override
   Future<void> approveCache(String key) async {
     final src = await _pendingFile(key);
-    if (!await src.exists()) return;
-    final dst = await _approvedFile(key);
-    final tmp = File('${dst.path}.tmp');
-    await tmp.writeAsString(await src.readAsString(), flush: true);
-    await tmp.rename(dst.path);
-    await src.delete();
+    await _withFileLock(src, () async {
+      if (!await src.exists()) return;
+      final contents = await src.readAsString();
+      final dst = await _approvedFile(key);
+      await _withFileLock(dst, () async {
+        if (await dst.exists()) {
+          await dst.readAsString();
+        }
+        final tmp = File('${dst.path}.tmp');
+        await tmp.writeAsString(contents, flush: true);
+        await tmp.rename(dst.path);
+      });
+      await src.delete();
+    });
   }
 
   @override
   Future<void> rejectCache(String key) async {
     final f = await _pendingFile(key);
-    if (await f.exists()) await f.delete();
+    await _withFileLock(f, () async {
+      if (await f.exists()) {
+        await f.readAsString();
+        await f.delete();
+      }
+    });
   }
 }
