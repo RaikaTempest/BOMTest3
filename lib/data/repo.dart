@@ -11,6 +11,9 @@ abstract class StandardsRepo {
   Future<List<DynamicComponentDef>> loadGlobalDynamicComponents();
   Future<void> saveGlobalDynamicComponents(List<DynamicComponentDef> components);
 
+  Future<List<FlaggedMaterial>> loadFlaggedMaterials();
+  Future<void> saveFlaggedMaterials(List<FlaggedMaterial> materials);
+
   Future<void> saveCacheEntry(String key, Map<String, dynamic> entryJson);
   Future<Map<String, dynamic>?> getCacheEntry(String key);
   Future<Map<String, Map<String, dynamic>>> listPendingCache();
