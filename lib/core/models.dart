@@ -96,33 +96,54 @@ class StaticComponent {
 
 class FlaggedMaterial {
   final String mm;
-  final String reason;
+  final String name;
+  final bool alternativeAvailable;
+  final String? alternativeMm;
+  final String? alternativeName;
   final String? note;
   final DateTime? flaggedAt;
   final String? flaggedBy;
 
-  FlaggedMaterial({
+  const FlaggedMaterial({
     required this.mm,
-    required this.reason,
+    required this.name,
+    this.alternativeAvailable = false,
+    this.alternativeMm,
+    this.alternativeName,
     this.note,
     this.flaggedAt,
     this.flaggedBy,
   });
 
+  static String? _normalizedString(String? value) {
+    if (value == null) return null;
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
   factory FlaggedMaterial.fromJson(Map<String, dynamic> j) => FlaggedMaterial(
-        mm: j['mm'] as String,
-        reason: j['reason'] as String? ?? '',
-        note: j['note'] as String?,
+        mm: _normalizedString(j['mm'] as String?) ?? '',
+        name: _normalizedString(j['name'] as String?) ??
+            _normalizedString(j['reason'] as String?) ??
+            '',
+        alternativeAvailable: j['alternative_available'] as bool? ?? false,
+        alternativeMm: _normalizedString(j['alternative_mm'] as String?),
+        alternativeName: _normalizedString(j['alternative_name'] as String?),
+        note: _normalizedString(j['note'] as String?) ??
+            _normalizedString(j['reason'] as String?),
         flaggedAt: j['flagged_at'] != null
             ? DateTime.tryParse(j['flagged_at'] as String)
             : null,
-        flaggedBy: j['flagged_by'] as String?,
+        flaggedBy: _normalizedString(j['flagged_by'] as String?),
       );
 
   Map<String, dynamic> toJson() => {
         'mm': mm,
-        'reason': reason,
-        if (note != null) 'note': note,
+        'name': name,
+        if (alternativeAvailable) 'alternative_available': true,
+        if (alternativeMm != null) 'alternative_mm': alternativeMm,
+        if (alternativeName != null) 'alternative_name': alternativeName,
+        if (note != null) ...{'note': note, 'reason': note},
         if (flaggedAt != null) 'flagged_at': flaggedAt!.toIso8601String(),
         if (flaggedBy != null) 'flagged_by': flaggedBy,
       };
