@@ -26,7 +26,8 @@ class _FakeRepo implements StandardsRepo {
   Future<List<StandardDef>> listStandards() async => throw UnimplementedError();
 
   @override
-  Future<void> saveStandard(StandardDef std) async => throw UnimplementedError();
+  Future<StandardSaveResult> saveStandard(StandardSaveRequest request) async =>
+      throw UnimplementedError();
 
   @override
   Future<void> deleteStandard(String code) async => throw UnimplementedError();
@@ -35,7 +36,8 @@ class _FakeRepo implements StandardsRepo {
   Future<List<ParameterDef>> loadGlobalParameters() async => throw UnimplementedError();
 
   @override
-  Future<void> saveGlobalParameters(List<ParameterDef> parameters) async =>
+  Future<ParametersSaveResult> saveGlobalParameters(
+          ParametersSaveRequest request) async =>
       throw UnimplementedError();
 
   @override
@@ -43,12 +45,12 @@ class _FakeRepo implements StandardsRepo {
       throw UnimplementedError();
 
   @override
-  Future<void> saveGlobalDynamicComponents(
-          List<DynamicComponentDef> components) async =>
+  Future<DynamicComponentsSaveResult> saveGlobalDynamicComponents(
+          DynamicComponentsSaveRequest request) async =>
       throw UnimplementedError();
 
   @override
-  Future<void> saveCacheEntry(String key, Map<String, dynamic> entryJson) async =>
+  Future<CacheSaveResult> saveCacheEntry(CacheSaveRequest request) async =>
       throw UnimplementedError();
 
   @override

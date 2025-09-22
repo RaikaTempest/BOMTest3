@@ -205,6 +205,11 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   bool _loadingGlobalParameters = true;
   List<DynamicComponentDef> globalDynamicComponents = [];
   bool _loadingGlobalDynamicComponents = true;
+  StandardDef? _originalStandard;
+  List<ParameterDef> _originalGlobalParameters = [];
+  List<ParameterDef> _serverGlobalParameters = [];
+  List<DynamicComponentDef> _originalGlobalDynamicComponents = [];
+  List<DynamicComponentDef> _serverGlobalDynamicComponents = [];
 
   String _createParameterId() => 'standard_param_${_nextParameterId++}';
 
@@ -229,7 +234,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
 
   void _combineGlobalAndCurrent() {
     final map = <String, ParameterDef>{};
-    for (final p in globalParameters) {
+    for (final p in _serverGlobalParameters) {
       final key = p.key.trim();
       if (key.isEmpty) continue;
       map[key] = p;
@@ -245,7 +250,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
 
   void _combineGlobalDynamicComponents() {
     final map = <String, DynamicComponentDef>{};
-    for (final c in globalDynamicComponents) {
+    for (final c in _serverGlobalDynamicComponents) {
       final name = c.name.trim();
       if (name.isEmpty) continue;
       map[name] = c;
@@ -264,13 +269,17 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       final list = await widget.repo.loadGlobalParameters();
       if (!mounted) return;
       setState(() {
-        globalParameters = list;
+        _serverGlobalParameters = List<ParameterDef>.from(list);
+        _originalGlobalParameters = List<ParameterDef>.from(list);
+        globalParameters = List<ParameterDef>.from(_serverGlobalParameters);
         _combineGlobalAndCurrent();
         _loadingGlobalParameters = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
+        _serverGlobalParameters = [];
+        _originalGlobalParameters = [];
         globalParameters = [];
         _combineGlobalAndCurrent();
         _loadingGlobalParameters = false;
@@ -283,13 +292,20 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       final list = await widget.repo.loadGlobalDynamicComponents();
       if (!mounted) return;
       setState(() {
-        globalDynamicComponents = list;
+        _serverGlobalDynamicComponents =
+            List<DynamicComponentDef>.from(list);
+        _originalGlobalDynamicComponents =
+            List<DynamicComponentDef>.from(list);
+        globalDynamicComponents =
+            List<DynamicComponentDef>.from(_serverGlobalDynamicComponents);
         _combineGlobalDynamicComponents();
         _loadingGlobalDynamicComponents = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
+        _serverGlobalDynamicComponents = [];
+        _originalGlobalDynamicComponents = [];
         globalDynamicComponents = [];
         _combineGlobalDynamicComponents();
         _loadingGlobalDynamicComponents = false;
@@ -567,6 +583,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     staticComponents = e?.staticComponents.toList() ?? [];
     dynamicComponents = e?.dynamicComponents.toList() ?? [];
     _resetDynamicComponentIds();
+    _originalStandard = e;
     _combineGlobalDynamicComponents();
     _loadGlobalParameters();
     _loadGlobalDynamicComponents();
@@ -643,23 +660,41 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         staticComponents: staticComponents,
         dynamicComponents: cleanedDynamic,
       );
-      final global = await widget.repo.loadGlobalParameters();
-      final map = <String, ParameterDef>{};
-      for (final p in global) {
+
+      final paramMap = <String, ParameterDef>{};
+      for (final p in _serverGlobalParameters) {
         final key = p.key.trim();
         if (key.isEmpty) continue;
-        map[key] = p;
+        paramMap[key] = p;
       }
       for (final p in cleaned) {
-        map[p.key] = p;
+        paramMap[p.key] = p;
       }
-      final updatedGlobal = map.values.toList()
+      final updatedGlobal = paramMap.values.toList()
         ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
-      await widget.repo.saveGlobalParameters(updatedGlobal);
 
-      final globalDynamic = await widget.repo.loadGlobalDynamicComponents();
+      final paramResult = await widget.repo.saveGlobalParameters(
+        ParametersSaveRequest(
+          original: _originalGlobalParameters,
+          updated: updatedGlobal,
+        ),
+      );
+
+      if (paramResult.hasConflicts) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Global parameter conflicts detected. Resolve them before saving.',
+            ),
+          ),
+        );
+        await _showParameterConflictDialog(paramResult);
+        return;
+      }
+
       final dynamicMap = <String, DynamicComponentDef>{};
-      for (final c in globalDynamic) {
+      for (final c in _serverGlobalDynamicComponents) {
         final nameValue = c.name.trim();
         if (nameValue.isEmpty) continue;
         dynamicMap[nameValue] = c;
@@ -669,15 +704,285 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       }
       final updatedGlobalDynamic = dynamicMap.values.toList()
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-      await widget.repo.saveGlobalDynamicComponents(updatedGlobalDynamic);
 
-      await widget.repo.saveStandard(std);
+      final dynamicResult = await widget.repo.saveGlobalDynamicComponents(
+        DynamicComponentsSaveRequest(
+          original: _originalGlobalDynamicComponents,
+          updated: updatedGlobalDynamic,
+        ),
+      );
+
+      if (dynamicResult.hasConflicts) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Dynamic component conflicts detected. Resolve them before saving.',
+            ),
+          ),
+        );
+        await _showDynamicConflictDialog(dynamicResult);
+        return;
+      }
+
+      final standardResult = await widget.repo.saveStandard(
+        StandardSaveRequest(
+          original: _originalStandard,
+          updated: std,
+        ),
+      );
+
+      if (standardResult.hasConflicts) {
+        if (!mounted) return;
+        await _showStandardConflictDialog(standardResult);
+        return;
+      }
+
+      setState(() {
+        parameters = cleaned;
+        dynamicComponents = cleanedDynamic;
+        _serverGlobalParameters = List<ParameterDef>.from(paramResult.merged);
+        _originalGlobalParameters =
+            List<ParameterDef>.from(paramResult.merged);
+        _serverGlobalDynamicComponents =
+            List<DynamicComponentDef>.from(dynamicResult.merged);
+        _originalGlobalDynamicComponents =
+            List<DynamicComponentDef>.from(dynamicResult.merged);
+        _originalStandard = standardResult.merged;
+        _resetParameterIds();
+        _resetDynamicComponentIds();
+        globalParameters = List<ParameterDef>.from(_serverGlobalParameters);
+        _combineGlobalAndCurrent();
+        globalDynamicComponents =
+            List<DynamicComponentDef>.from(_serverGlobalDynamicComponents);
+        _combineGlobalDynamicComponents();
+      });
+
       if (!mounted) return;
+
+      if (paramResult.hasRemoteChanges) {
+        _showParameterMergeSnackBar(paramResult.remoteChanges);
+      }
+      if (dynamicResult.hasRemoteChanges) {
+        _showDynamicMergeSnackBar(dynamicResult.remoteChanges);
+      }
+
+      if (standardResult.wroteFile) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Standard saved.')),
+        );
+      } else if (!standardResult.alreadyUpToDate) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No changes to save.')),
+        );
+      }
+
       Navigator.of(context).pop(true);
     } catch (e) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Save error: $e')));
+    }
+  }
+
+  Future<void> _showParameterConflictDialog(
+      ParametersSaveResult result) async {
+    if (!mounted) return;
+    final shouldReload = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Parameter conflicts'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Another session updated the global parameters. Resolve the conflicts below or reload the remote data.',
+                ),
+                const SizedBox(height: 12),
+                for (final conflict in result.conflicts)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(_describeParameterConflict(conflict)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep editing'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reload remote data'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldReload == true && mounted) {
+      setState(() {
+        _serverGlobalParameters = List<ParameterDef>.from(result.merged);
+        _originalGlobalParameters = List<ParameterDef>.from(result.merged);
+        globalParameters = List<ParameterDef>.from(_serverGlobalParameters);
+        _combineGlobalAndCurrent();
+      });
+    }
+  }
+
+  Future<void> _showDynamicConflictDialog(
+      DynamicComponentsSaveResult result) async {
+    if (!mounted) return;
+    final shouldReload = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Dynamic component conflicts'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Another session updated the global dynamic components. Resolve the conflicts below or reload the remote data.',
+                ),
+                const SizedBox(height: 12),
+                for (final conflict in result.conflicts)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(_describeComponentConflict(conflict)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep editing'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reload remote data'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldReload == true && mounted) {
+      setState(() {
+        _serverGlobalDynamicComponents =
+            List<DynamicComponentDef>.from(result.merged);
+        _originalGlobalDynamicComponents =
+            List<DynamicComponentDef>.from(result.merged);
+        globalDynamicComponents =
+            List<DynamicComponentDef>.from(_serverGlobalDynamicComponents);
+        _combineGlobalDynamicComponents();
+      });
+    }
+  }
+
+  Future<void> _showStandardConflictDialog(StandardSaveResult result) async {
+    if (!mounted) return;
+    final conflict = result.conflict;
+    final message = conflict == null
+        ? 'Another session updated this standard.'
+        : switch (conflict.type) {
+            StandardSaveConflictType.alreadyExists =>
+                'A standard with code "${conflict.code}" already exists with different data.',
+            StandardSaveConflictType.updatedRemotely =>
+                'This standard was updated in another session. Reload the latest version to continue.',
+            StandardSaveConflictType.deletedRemotely =>
+                'This standard was deleted remotely.',
+          };
+
+    final reload = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Standard conflict'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep editing'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reload standard'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (reload == true) {
+      final remote = result.merged;
+      if (remote != null && mounted) {
+        setState(() {
+          _originalStandard = remote;
+          code.text = remote.code;
+          name.text = remote.name;
+          parameters = remote.parameters.toList();
+          staticComponents = remote.staticComponents.toList();
+          dynamicComponents = remote.dynamicComponents.toList();
+          _resetParameterIds();
+          _resetDynamicComponentIds();
+        });
+      }
+    }
+  }
+
+  void _showParameterMergeSnackBar(Set<String> keys) {
+    if (keys.isEmpty) return;
+    final list = keys.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Merged parameter updates for: ${list.join(', ')}'),
+      ),
+    );
+  }
+
+  void _showDynamicMergeSnackBar(Set<String> names) {
+    final list = names.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final preview = list.length > 3
+        ? '${list.take(3).join(', ')} and ${list.length - 3} more'
+        : list.join(', ');
+    final message = list.isEmpty
+        ? 'Dynamic components saved.'
+        : 'Merged component updates for: $preview';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  String _describeParameterConflict(ParameterConflict conflict) {
+    switch (conflict.type) {
+      case ParameterConflictType.addition:
+        return 'Parameter "${conflict.key}" was added elsewhere.';
+      case ParameterConflictType.removal:
+        return 'Parameter "${conflict.key}" was removed remotely.';
+      case ParameterConflictType.field:
+        final fields = conflict.fields.toList()..sort();
+        final label = fields.join(', ');
+        return 'Parameter "${conflict.key}" changed remotely: $label.';
+    }
+  }
+
+  String _describeComponentConflict(DynamicComponentConflict conflict) {
+    switch (conflict.type) {
+      case DynamicComponentConflictType.addition:
+        return 'Component "${conflict.name}" was added elsewhere.';
+      case DynamicComponentConflictType.removal:
+        return 'Component "${conflict.name}" was removed remotely.';
+      case DynamicComponentConflictType.field:
+        final fields = conflict.fields.toList()..sort();
+        final label = fields.join(', ');
+        return 'Component "${conflict.name}" changed remotely: $label.';
     }
   }
 
