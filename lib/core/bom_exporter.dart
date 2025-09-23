@@ -22,17 +22,41 @@ class BomExporter {
       flaggedLookup[key] = flagged;
     }
     final matchedFlagged = <String, FlaggedMaterial>{};
+    final standardsByCode = <String, StandardDef>{};
+    for (final std in standards) {
+      standardsByCode[std.code] = std;
+    }
+    final dynamicLookup = _buildDynamicComponentLookup(standards);
+    final standardsWithDependencies = <String, StandardDef>{};
+    final injectedDynamicNames = <String, Set<String>>{};
+    for (final entry in standardsByCode.entries) {
+      final resolved =
+          _withDynamicDependencies(entry.value, dynamicLookup);
+      standardsWithDependencies[entry.key] = resolved.standard;
+      injectedDynamicNames[entry.key] = resolved.injectedNames;
+    }
     for (final loc in locations) {
       for (final code in loc.standards) {
-        final std = standards.firstWhere(
-            (s) => s.code == code,
-            orElse: () => StandardDef(code: code, name: ''));
-        if (std.code != code || std.name.isEmpty && std.staticComponents.isEmpty && std.dynamicComponents.isEmpty) {
+        final base = standardsByCode[code];
+        if (base == null) {
           continue;
         }
-        final lines = engine.evaluate(std, loc.variables);
+        if (base.name.isEmpty &&
+            base.staticComponents.isEmpty &&
+            base.dynamicComponents.isEmpty) {
+          continue;
+        }
+        final stdWithDeps = standardsWithDependencies[code] ?? base;
+        final injected = injectedDynamicNames[code] ?? const <String>{};
+        final lines = engine.evaluate(stdWithDeps, loc.variables);
         for (final line in lines) {
-          sb.writeln('${_esc(loc.barcode)},${_esc(std.code)},${_esc(line.mm)},${line.qty},${_esc(line.source)}');
+          if (line.source.startsWith('rule:')) {
+            final dynamicName = line.source.substring(5);
+            if (injected.contains(dynamicName)) {
+              continue;
+            }
+          }
+          sb.writeln('${_esc(loc.barcode)},${_esc(base.code)},${_esc(line.mm)},${line.qty},${_esc(line.source)}');
           final mmKey = line.mm.trim().toLowerCase();
           if (mmKey.isEmpty) continue;
           final match = flaggedLookup[mmKey];
@@ -84,5 +108,69 @@ class BomExporter {
       return '"$escaped"';
     }
     return v;
+  }
+
+  Map<String, DynamicComponentDef> _buildDynamicComponentLookup(
+      Iterable<StandardDef> standards) {
+    final lookup = <String, DynamicComponentDef>{};
+    for (final std in standards) {
+      for (final component in std.dynamicComponents) {
+        final name = component.name.trim();
+        if (name.isEmpty) continue;
+        lookup.putIfAbsent(name, () => component);
+      }
+    }
+    return lookup;
+  }
+
+  ({StandardDef standard, Set<String> injectedNames})
+      _withDynamicDependencies(
+    StandardDef std,
+    Map<String, DynamicComponentDef> dynamicLookup,
+  ) {
+    if (std.staticComponents.isEmpty) {
+      return (standard: std, injectedNames: const <String>{});
+    }
+    final existing = std.dynamicComponents
+        .map((dc) => dc.name.trim())
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    final injected = <String>{};
+    final dependencies = <DynamicComponentDef>[];
+    for (final staticComponent in std.staticComponents) {
+      final providerName = staticComponent.dynamicMmComponent?.trim();
+      if (providerName == null || providerName.isEmpty) {
+        continue;
+      }
+      if (existing.contains(providerName)) {
+        continue;
+      }
+      final dependency = dynamicLookup[providerName];
+      if (dependency == null) {
+        continue;
+      }
+      dependencies.add(dependency);
+      injected.add(providerName);
+      existing.add(providerName);
+    }
+    if (dependencies.isEmpty) {
+      return (standard: std, injectedNames: const <String>{});
+    }
+    return (
+      standard: StandardDef(
+        code: std.code,
+        name: std.name,
+        version: std.version,
+        status: std.status,
+        parameters: std.parameters,
+        staticComponents: std.staticComponents,
+        dynamicComponents: [
+          ...std.dynamicComponents,
+          ...dependencies,
+        ],
+        applicationId: std.applicationId,
+      ),
+      injectedNames: Set.unmodifiable(injected),
+    );
   }
 }

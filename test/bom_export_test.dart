@@ -106,4 +106,43 @@ void main() {
     );
     expect(lines.any((line) => line.contains('MMX')), isFalse);
   });
+
+  test('static component borrowing global dynamic MM omits rule row', () {
+    final sharedDynamic = DynamicComponentDef(name: 'GlobalConn', rules: [
+      RuleDef(expr: {
+        '==': [1, 1]
+      }, outputs: [OutputSpec(mm: 'MM#GLOBAL', qty: 3)])
+    ]);
+    final stdPrimary = StandardDef(
+      code: 'PRIMARY',
+      name: 'Primary',
+      staticComponents: [
+        StaticComponent(dynamicMmComponent: 'GlobalConn', qty: 3),
+      ],
+      dynamicComponents: [
+        DynamicComponentDef(name: 'LocalDyn', rules: [
+          RuleDef(expr: {
+            '==': [1, 1]
+          }, outputs: [OutputSpec(mm: 'MM#LOCAL', qty: 7)])
+        ]),
+      ],
+    );
+    final library = StandardDef(
+      code: 'LIB',
+      name: 'Library',
+      dynamicComponents: [sharedDynamic],
+    );
+
+    final locations = [
+      WorkLocation(barcode: 'L-100', standards: {'PRIMARY'}),
+    ];
+
+    final exporter = BomExporter();
+    final csv = exporter.buildCsv(locations, [stdPrimary, library]);
+    final lines = csv.trim().split('\n');
+
+    expect(lines.contains('L-100,PRIMARY,MM#GLOBAL,3,static:GlobalConn'), isTrue);
+    expect(lines.contains('L-100,PRIMARY,MM#LOCAL,7,rule:LocalDyn'), isTrue);
+    expect(lines.any((line) => line.contains('rule:GlobalConn')), isFalse);
+  });
 }
