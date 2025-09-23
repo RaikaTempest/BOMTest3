@@ -106,4 +106,42 @@ void main() {
     );
     expect(lines.any((line) => line.contains('MMX')), isFalse);
   });
+
+  test('buildCsv resolves dynamic references in static components', () {
+    final std = StandardDef(
+      code: 'S1',
+      name: 'Std1',
+      staticComponents: [
+        const StaticComponent(dynamicMmComponent: 'Conn', qty: 3),
+      ],
+    );
+
+    final globalDynamic = DynamicComponentDef(
+      name: 'Conn',
+      rules: [
+        RuleDef(
+          expr: {'==': [1, 1]},
+          outputs: [
+            OutputSpec(mm: 'MM2', qty: 5),
+          ],
+        ),
+      ],
+    );
+
+    final locations = [
+      WorkLocation(barcode: 'L1', standards: {'S1'}),
+    ];
+
+    final exporter = BomExporter();
+    final csv = exporter.buildCsv(
+      locations,
+      [std],
+      globalDynamicComponents: [globalDynamic],
+    );
+
+    final lines = csv.trim().split('\n');
+
+    expect(lines.contains('L1,S1,MM2,3,static:Conn'), isTrue);
+    expect(lines.contains('L1,S1,MM2,5,rule:Conn'), isTrue);
+  });
 }

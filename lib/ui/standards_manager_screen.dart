@@ -275,6 +275,9 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         _combineGlobalAndCurrent();
         _loadingGlobalParameters = false;
       });
+      if (mounted) {
+        _ensureDependenciesForAllStaticComponents();
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -301,6 +304,9 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         _combineGlobalDynamicComponents();
         _loadingGlobalDynamicComponents = false;
       });
+      if (mounted) {
+        _ensureDependenciesForAllStaticComponents();
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -385,6 +391,13 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     });
   }
 
+  void _updateStaticComponent(int index, StaticComponent comp) {
+    setState(() {
+      staticComponents[index] = comp;
+      _ensureDependenciesForStaticComponent(comp);
+    });
+  }
+
   Set<String> _collectReferencedParameterKeys(
     DynamicComponentDef component,
   ) {
@@ -431,6 +444,102 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       }
     }
     return null;
+  }
+
+  DynamicComponentDef? _findGlobalDynamicComponent(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return null;
+
+    for (final component in _serverGlobalDynamicComponents) {
+      if (component.name.trim() == trimmed) {
+        return component;
+      }
+    }
+    for (final component in globalDynamicComponents) {
+      if (component.name.trim() == trimmed) {
+        return component;
+      }
+    }
+    return null;
+  }
+
+  void _ensureDependenciesForStaticComponent(StaticComponent comp) {
+    final dynamicName = comp.dynamicMmComponent?.trim();
+    if (dynamicName == null || dynamicName.isEmpty) {
+      return;
+    }
+
+    var addedDynamic = false;
+    final normalizedExistingDynamic = <String>{};
+    for (final existing in dynamicComponents) {
+      final name = existing.name.trim();
+      if (name.isNotEmpty) {
+        normalizedExistingDynamic.add(name);
+      }
+    }
+
+    if (!normalizedExistingDynamic.contains(dynamicName)) {
+      final source = _findGlobalDynamicComponent(dynamicName);
+      if (source != null) {
+        dynamicComponents.add(_cloneDynamicComponent(source));
+        _dynamicComponentIds.add(_createDynamicComponentId());
+        addedDynamic = true;
+      }
+    }
+
+    DynamicComponentDef? matched;
+    for (final existing in dynamicComponents) {
+      if (existing.name.trim() == dynamicName) {
+        matched = existing;
+        break;
+      }
+    }
+
+    if (matched == null) {
+      if (addedDynamic) {
+        _combineGlobalDynamicComponents();
+      }
+      return;
+    }
+
+    final referencedParams = _collectReferencedParameterKeys(matched);
+    final normalizedExistingParams = <String>{};
+    for (final param in parameters) {
+      final key = param.key.trim();
+      if (key.isNotEmpty) {
+        normalizedExistingParams.add(key);
+      }
+    }
+
+    var addedParam = false;
+    for (final key in referencedParams) {
+      final trimmedKey = key.trim();
+      if (trimmedKey.isEmpty || normalizedExistingParams.contains(trimmedKey)) {
+        continue;
+      }
+      final globalParam = _findGlobalParameter(trimmedKey);
+      if (globalParam != null) {
+        parameters.add(_cloneParameter(globalParam));
+        _parameterIds.add(_createParameterId());
+        normalizedExistingParams.add(trimmedKey);
+        addedParam = true;
+      }
+    }
+
+    if (addedDynamic) {
+      _combineGlobalDynamicComponents();
+    }
+    if (addedParam) {
+      _combineGlobalAndCurrent();
+    }
+  }
+
+  void _ensureDependenciesForAllStaticComponents() {
+    setState(() {
+      for (final comp in staticComponents) {
+        _ensureDependenciesForStaticComponent(comp);
+      }
+    });
   }
 
   Future<ParameterDef?> _showParameterSelectionDialog(
@@ -1126,10 +1235,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                   (e) => _StaticEditor(
                     comp: e.value,
                     availableDynamicComponents: globalDynamicComponents,
-                    onChanged:
-                        (c) => setState(() {
-                          staticComponents[e.key] = c;
-                        }),
+                    onChanged: (c) => _updateStaticComponent(e.key, c),
                     onDelete:
                         () => setState(() {
                           staticComponents.removeAt(e.key);

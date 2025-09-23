@@ -239,11 +239,14 @@ class _ProjectScreenState extends State<ProjectScreen> {
     final repo = await createRepo();
     final standards = await repo.listStandards();
     final flaggedMaterials = await repo.loadFlaggedMaterials();
+    final globalDynamicComponents =
+        await repo.loadGlobalDynamicComponents();
     final exporter = BomExporter();
     final csv = exporter.buildCsv(
       locations,
       standards,
       flaggedMaterials: flaggedMaterials,
+      globalDynamicComponents: globalDynamicComponents,
     );
     const csvTypeGroup = XTypeGroup(
       label: 'CSV',
