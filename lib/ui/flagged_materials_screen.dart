@@ -22,6 +22,8 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
   final List<String> _materialIds = [];
   int _nextMaterialId = 0;
   bool _loading = true;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   String _createMaterialId() => 'flagged_material_${_nextMaterialId++}';
 
@@ -35,7 +37,14 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_onSearchChanged);
     _initRepo();
+  }
+
+  void _onSearchChanged() {
+    setState(() {
+      _searchQuery = _searchController.text;
+    });
   }
 
   Future<void> _initRepo() async {
@@ -81,6 +90,9 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
       materials.add(const FlaggedMaterial(mm: '', name: ''));
       _materialIds.add(_createMaterialId());
     });
+    if (_searchController.text.isNotEmpty) {
+      _searchController.clear();
+    }
   }
 
   Future<void> _save() async {
@@ -178,6 +190,29 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
         SnackBar(content: Text('Save error: $e')),
       );
     }
+  }
+
+  List<int> get _filteredMaterialIndices {
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isEmpty) {
+      return List<int>.generate(materials.length, (index) => index);
+    }
+    final matches = <int>[];
+    for (var i = 0; i < materials.length; i++) {
+      final material = materials[i];
+      final mm = material.mm.toLowerCase();
+      final name = material.name.toLowerCase();
+      if (mm.contains(query) || name.contains(query)) {
+        matches.add(i);
+      }
+    }
+    return matches;
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _showConflictDialog(FlaggedMaterialsSaveResult result) async {
@@ -301,6 +336,7 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
   Widget build(BuildContext context) {
     final repo = this.repo;
     final theme = Theme.of(context);
+    final filteredIndices = _filteredMaterialIndices;
     return BomScaffold(
       appBar: AppBar(
         title: const Text('Flagged Materials'),
@@ -319,51 +355,86 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
           ? const Center(child: CircularProgressIndicator())
           : repo == null
               ? const Center(child: Text('Failed to load repository.'))
-              : materials.isEmpty
-                  ? Center(
-                      child: GlassContainer(
-                        margin: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.flag_outlined,
-                              size: 46,
-                              color: theme.colorScheme.secondary,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No flagged materials yet',
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Track materials that should be avoided and specify approved alternatives when available.',
-                              textAlign: TextAlign.center,
-                              style: theme.textTheme.bodyMedium
-                                  ?.copyWith(color: Colors.white70),
-                            ),
-                          ],
+              : Column(
+                  children: [
+                    Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          labelText: 'Search flagged materials',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchQuery.isEmpty
+                              ? null
+                              : IconButton(
+                                  onPressed: _searchController.clear,
+                                  icon: const Icon(Icons.clear),
+                                ),
                         ),
                       ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-                      itemCount: materials.length,
-                      itemBuilder: (context, index) {
-                        return GlassContainer(
-                          key: ValueKey(_materialIds[index]),
-                          margin: const EdgeInsets.symmetric(vertical: 12),
-                          child: _FlaggedMaterialEditor(
-                            material: materials[index],
-                            onChanged: (m) => _onMaterialChanged(index, m),
-                            onDelete: () => _removeMaterial(index),
-                          ),
-                        );
-                      },
                     ),
+                    Expanded(
+                      child: materials.isEmpty
+                          ? Center(
+                              child: GlassContainer(
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.flag_outlined,
+                                      size: 46,
+                                      color: theme.colorScheme.secondary,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'No flagged materials yet',
+                                      style: theme.textTheme.titleLarge?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Track materials that should be avoided and specify approved alternatives when available.',
+                                      textAlign: TextAlign.center,
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(color: Colors.white70),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : filteredIndices.isEmpty
+                              ? const Center(
+                                  child: Text(
+                                    'No flagged materials match your search.',
+                                  ),
+                                )
+                              : ListView.builder(
+                                  padding: const EdgeInsets.fromLTRB(
+                                      24, 0, 24, 120),
+                                  itemCount: filteredIndices.length,
+                                  itemBuilder: (context, displayIndex) {
+                                    final index =
+                                        filteredIndices[displayIndex];
+                                    return GlassContainer(
+                                      key: ValueKey(_materialIds[index]),
+                                      margin:
+                                          const EdgeInsets.symmetric(vertical: 12),
+                                      child: _FlaggedMaterialEditor(
+                                        material: materials[index],
+                                        onChanged: (m) =>
+                                            _onMaterialChanged(index, m),
+                                        onDelete: () => _removeMaterial(index),
+                                      ),
+                                    );
+                                  },
+                                ),
+                    ),
+                  ],
+                ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: repo == null ? null : _addMaterial,
         icon: const Icon(Icons.add),
@@ -461,22 +532,23 @@ class _FlaggedMaterialEditorState extends State<_FlaggedMaterialEditor> {
   }
 
   FlaggedMaterial _buildMaterial() {
-    final mm = mmController.text.trim();
-    final name = nameController.text.trim();
-    final note = noteController.text.trim();
-    final altMm = alternativeMmController.text.trim();
-    final altName = alternativeNameController.text.trim();
-    final flaggedBy = flaggedByController.text.trim();
+    final mm = mmController.text;
+    final name = nameController.text;
+    final note = noteController.text;
+    final altMm = alternativeMmController.text;
+    final altName = alternativeNameController.text;
+    final flaggedBy = flaggedByController.text;
     return FlaggedMaterial(
       mm: mm,
       name: name,
       alternativeAvailable: alternativeAvailable,
-      alternativeMm: alternativeAvailable && altMm.isNotEmpty ? altMm : null,
+      alternativeMm:
+          alternativeAvailable && altMm.trim().isNotEmpty ? altMm : null,
       alternativeName:
-          alternativeAvailable && altName.isNotEmpty ? altName : null,
-      note: note.isEmpty ? null : note,
+          alternativeAvailable && altName.trim().isNotEmpty ? altName : null,
+      note: note.trim().isEmpty ? null : note,
       flaggedAt: flaggedAt,
-      flaggedBy: flaggedBy.isEmpty ? null : flaggedBy,
+      flaggedBy: flaggedBy.trim().isEmpty ? null : flaggedBy,
     );
   }
 
