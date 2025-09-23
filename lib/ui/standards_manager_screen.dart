@@ -360,11 +360,77 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     }
     final selected = await _showDynamicComponentSelectionDialog(options);
     if (selected == null) return;
+    final referencedParams = _collectReferencedParameterKeys(selected);
+    final normalizedExisting = parameters.map((e) => e.key.trim()).toSet();
+    final paramsToAdd = <ParameterDef>[];
+    for (final key in referencedParams) {
+      if (key.isEmpty || normalizedExisting.contains(key)) continue;
+      final globalParam = _findGlobalParameter(key);
+      if (globalParam != null) {
+        paramsToAdd.add(_cloneParameter(globalParam));
+        normalizedExisting.add(key);
+      }
+    }
     setState(() {
+      for (final param in paramsToAdd) {
+        parameters.add(param);
+        _parameterIds.add(_createParameterId());
+      }
       dynamicComponents.add(_cloneDynamicComponent(selected));
       _dynamicComponentIds.add(_createDynamicComponentId());
+      if (paramsToAdd.isNotEmpty) {
+        _combineGlobalAndCurrent();
+      }
       _combineGlobalDynamicComponents();
     });
+  }
+
+  Set<String> _collectReferencedParameterKeys(
+    DynamicComponentDef component,
+  ) {
+    final keys = <String>{};
+
+    void visit(dynamic node) {
+      if (node is Map) {
+        final dynamic varValue = node['var'];
+        if (varValue is String) {
+          final trimmed = varValue.trim();
+          if (trimmed.isNotEmpty) {
+            keys.add(trimmed);
+          }
+        }
+        for (final value in node.values) {
+          visit(value);
+        }
+      } else if (node is List) {
+        for (final value in node) {
+          visit(value);
+        }
+      }
+    }
+
+    for (final rule in component.rules) {
+      visit(rule.expr);
+    }
+
+    return keys;
+  }
+
+  ParameterDef? _findGlobalParameter(String key) {
+    final trimmed = key.trim();
+    if (trimmed.isEmpty) return null;
+
+    for (final param in _serverGlobalParameters) {
+      if (param.key.trim() == trimmed) {
+        return param;
+      }
+    }
+    for (final param in globalParameters) {
+      if (param.key.trim() == trimmed) {
+        return param;
+      }
+    }
+    return null;
   }
 
   Future<ParameterDef?> _showParameterSelectionDialog(
