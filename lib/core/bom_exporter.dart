@@ -73,6 +73,10 @@ class BomExporter {
           }
           if (source.startsWith('rule:')) {
             final dynamicName = source.substring(5).trim();
+            // If a static provider for this dynamicName was emitted, skip the dynamic line
+            if (emittedStaticProviders.contains(dynamicName)) {
+              continue;
+            }
             if (injected.contains(dynamicName)) {
               suppressedDynamicOutputs.putIfAbsent(dynamicName, () => line);
               continue;
