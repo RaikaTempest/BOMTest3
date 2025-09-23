@@ -67,4 +67,47 @@ void main() {
     expect(bom.single.mm, 'MM#CLAMP');
     expect(bom.single.qty, 6); // 20/10*3
   });
+
+  test('static component can borrow MM from dynamic provider', () {
+    final std = StandardDef(
+      code: 'T',
+      name: 'Test',
+      staticComponents: [
+        StaticComponent(mm: 'MM#FALLBACK', dynamicMmComponent: 'Conn', qty: 5),
+      ],
+      dynamicComponents: [
+        DynamicComponentDef(name: 'Conn', rules: [
+          RuleDef(
+            expr: {
+              '==': [
+                {'var': 'size'},
+                'large',
+              ]
+            },
+            outputs: [OutputSpec(mm: 'MM#LARGE', qty: 1)],
+          ),
+          RuleDef(
+            expr: {
+              '==': [
+                {'var': 'size'},
+                'small',
+              ]
+            },
+            outputs: [OutputSpec(mm: 'MM#SMALL', qty: 1)],
+          ),
+        ]),
+      ],
+    );
+
+    final eng = RuleEngine();
+    final bom = eng.evaluate(std, {'size': 'small'});
+
+    expect(
+      bom.any(
+        (line) => line.source == 'static:Conn' && line.mm == 'MM#SMALL' && line.qty == 5,
+      ),
+      isTrue,
+    );
+  });
 }
+

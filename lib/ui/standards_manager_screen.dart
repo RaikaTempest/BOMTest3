@@ -1059,6 +1059,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                 .map(
                   (e) => _StaticEditor(
                     comp: e.value,
+                    availableDynamicComponents: globalDynamicComponents,
                     onChanged:
                         (c) => setState(() {
                           staticComponents[e.key] = c;
@@ -1149,11 +1150,13 @@ class _StaticEditor extends StatefulWidget {
   final StaticComponent comp;
   final ValueChanged<StaticComponent> onChanged;
   final VoidCallback onDelete;
+  final List<DynamicComponentDef> availableDynamicComponents;
 
   const _StaticEditor({
     required this.comp,
     required this.onChanged,
     required this.onDelete,
+    this.availableDynamicComponents = const [],
   });
 
   @override
@@ -1161,20 +1164,45 @@ class _StaticEditor extends StatefulWidget {
 }
 
 class _StaticEditorState extends State<_StaticEditor> {
+  static const String _literalOption = '__literal__';
   late TextEditingController mm;
   late TextEditingController qty;
+  late String _mmSource;
 
   @override
   void initState() {
     super.initState();
-    mm = TextEditingController(text: widget.comp.mm);
+    mm = TextEditingController(text: widget.comp.mm ?? '');
     qty = TextEditingController(text: widget.comp.qty.toString());
+    final dynamicName = widget.comp.dynamicMmComponent?.trim();
+    _mmSource =
+        (dynamicName != null && dynamicName.isNotEmpty) ? dynamicName : _literalOption;
+  }
+
+  @override
+  void didUpdateWidget(covariant _StaticEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.comp.mm != widget.comp.mm) {
+      mm.text = widget.comp.mm ?? '';
+    }
+    if (oldWidget.comp.qty != widget.comp.qty) {
+      qty.text = widget.comp.qty.toString();
+    }
+    final dynamicName = widget.comp.dynamicMmComponent?.trim();
+    final nextSource =
+        (dynamicName != null && dynamicName.isNotEmpty) ? dynamicName : _literalOption;
+    if (nextSource != _mmSource) {
+      _mmSource = nextSource;
+    }
   }
 
   void _notify() {
+    final literal = mm.text.trim();
     widget.onChanged(
       StaticComponent(
-        mm: mm.text.trim(),
+        mm: literal.isEmpty ? null : literal,
+        dynamicMmComponent:
+            _mmSource == _literalOption ? null : _mmSource,
         qty: int.tryParse(qty.text.trim()) ?? 0,
       ),
     );
@@ -1182,17 +1210,67 @@ class _StaticEditorState extends State<_StaticEditor> {
 
   @override
   Widget build(BuildContext context) {
+    final dynamicNames = widget.availableDynamicComponents
+        .map((e) => e.name.trim())
+        .where((name) => name.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final dropdownItems = <DropdownMenuItem<String>>[
+      const DropdownMenuItem(
+        value: _literalOption,
+        child: Text('Literal MM'),
+      ),
+      ...dynamicNames.map(
+        (name) => DropdownMenuItem<String>(
+          value: name,
+          child: Text('Dynamic: $name'),
+        ),
+      ),
+    ];
+    if (_mmSource != _literalOption && !dynamicNames.contains(_mmSource)) {
+      dropdownItems.add(
+        DropdownMenuItem<String>(
+          value: _mmSource,
+          child: Text('Dynamic: $_mmSource'),
+        ),
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: TextField(
-                controller: mm,
-                decoration: const InputDecoration(labelText: 'MM'),
-                onChanged: (_) => _notify(),
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: _mmSource,
+                    decoration: const InputDecoration(labelText: 'MM Source'),
+                    items: dropdownItems,
+                    isExpanded: true,
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _mmSource = value;
+                      });
+                      _notify();
+                    },
+                  ),
+                  if (_mmSource == _literalOption) ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: mm,
+                      decoration: const InputDecoration(labelText: 'MM'),
+                      onChanged: (_) => _notify(),
+                    ),
+                  ],
+                ],
               ),
             ),
             const SizedBox(width: 8),
