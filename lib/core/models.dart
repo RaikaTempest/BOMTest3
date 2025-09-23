@@ -84,14 +84,24 @@ class ParameterDef {
 }
 
 class StaticComponent {
-  final String mm;
+  final String? mm;
+  final String? dynamicMmComponent;
   final int qty;
-  StaticComponent({required this.mm, required this.qty});
+
+  const StaticComponent({this.mm, this.dynamicMmComponent, required this.qty});
+
   factory StaticComponent.fromJson(Map<String, dynamic> j) => StaticComponent(
-        mm: j['mm'] as String,
+        mm: j['mm'] as String?,
+        dynamicMmComponent: j['dynamic_mm_component'] as String?,
         qty: (j['qty'] as num).toInt(),
       );
-  Map<String, dynamic> toJson() => {'mm': mm, 'qty': qty};
+
+  Map<String, dynamic> toJson() => {
+        if (mm != null) 'mm': mm,
+        if (dynamicMmComponent != null)
+          'dynamic_mm_component': dynamicMmComponent,
+        'qty': qty,
+      };
 }
 
 class FlaggedMaterial {
@@ -287,7 +297,7 @@ class StandardApplication {
 class BomLine {
   final String mm;
   final int qty;
-  final String source; // 'static' or 'rule:<dc>'
+  final String source; // 'static', 'static:<dc>' or 'rule:<dc>'
   BomLine({required this.mm, required this.qty, required this.source});
 }
 
