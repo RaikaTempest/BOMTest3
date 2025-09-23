@@ -85,7 +85,7 @@ packages:
     dependency: transitive
     description:
       name: file_selector_ios
-      sha256: "fe9f52123af16bba4ad65bd7e03defbbb4b172a38a8e6aaa2a869a0c56a5f5fb"
+      sha256: fe9f52123af16bba4ad65bd7e03defbbb4b172a38a8e6aaa2a869a0c56a5f5fb
       url: "https://pub.dev"
     source: hosted
     version: "0.5.3+2"
@@ -109,7 +109,7 @@ packages:
     dependency: transitive
     description:
       name: file_selector_platform_interface
-      sha256: "a3994c26f10378a039faa11de174d7b78eb8f79e4dd0af2a451410c1a5c3f66b"
+      sha256: a3994c26f10378a039faa11de174d7b78eb8f79e4dd0af2a451410c1a5c3f66b
       url: "https://pub.dev"
     source: hosted
     version: "2.6.2"
@@ -117,7 +117,7 @@ packages:
     dependency: transitive
     description:
       name: file_selector_web
-      sha256: "c4c0ea4224d97a60a7067eca0c8fd419e708ff830e0c83b11a48faf566cec3e7"
+      sha256: c4c0ea4224d97a60a7067eca0c8fd419e708ff830e0c83b11a48faf566cec3e7
       url: "https://pub.dev"
     source: hosted
     version: "0.9.4+2"
@@ -147,11 +147,16 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_web_plugins:
+    dependency: transitive
+    description: flutter
+    source: sdk
+    version: "0.0.0"
   http:
     dependency: transitive
     description:
       name: http
-      sha256: "bb2ce4590bc2667c96f318d68cac1b5a7987ec819351d32b1c987239a815e007"
+      sha256: bb2ce4590bc2667c96f318d68cac1b5a7987ec819351d32b1c987239a815e007
       url: "https://pub.dev"
     source: hosted
     version: "1.5.0"
@@ -220,7 +225,7 @@ packages:
     source: hosted
     version: "1.16.0"
   path:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: path
       sha256: "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5"
@@ -348,7 +353,7 @@ packages:
     dependency: transitive
     description:
       name: typed_data
-      sha256: "f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006"
+      sha256: f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"

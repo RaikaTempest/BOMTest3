@@ -38,6 +38,14 @@ class JsonLogic {
     return 0;
   }
 
+  num? _tryNum(dynamic v) {
+    if (v is num) return v;
+    if (v is String) {
+      return num.tryParse(v);
+    }
+    return null;
+  }
+
   // Evaluate an arbitrary operand: if it's a map, treat as expression; else pass through
   dynamic _eval(dynamic v, Map<String, dynamic> ctx) {
     if (v is Map) return apply(Map<String, dynamic>.from(v), ctx);
@@ -74,9 +82,12 @@ class JsonLogic {
       case '==': {
         final a = _eval(val[0], ctx);
         final b = _eval(val[1], ctx);
-        // numeric-aware equality: 4 == 4.0 and '4' == 4 are true
-        if ((a is num || a is String) && (b is num || b is String)) {
-          return _asNum(a) == _asNum(b);
+        // numeric-aware equality: 4 == 4.0 and '4' == 4 are true, but
+        // non-numeric strings should still compare by value.
+        final numA = _tryNum(a);
+        final numB = _tryNum(b);
+        if (numA != null && numB != null) {
+          return numA == numB;
         }
         return a == b;
       }
