@@ -93,11 +93,39 @@ class _NewJobScreenState extends State<NewJobScreen> {
             Expanded(
               child: ListView.builder(
                 itemCount: bom.length,
-                itemBuilder: (_, i) => ListTile(
-                  dense: true,
-                  title: Text('${bom[i].mm}  × ${bom[i].qty}'),
-                  subtitle: Text(bom[i].source),
-                ),
+                itemBuilder: (_, i) {
+                  final line = bom[i];
+                  final notes = <Widget>[
+                    Text(line.source),
+                  ];
+                  if (line.status != 'ok') {
+                    notes.add(
+                      Text(
+                        'Status: ${line.status}',
+                        style: const TextStyle(color: Colors.redAccent),
+                      ),
+                    );
+                  }
+                  if (line.requiresAccessory) {
+                    notes.add(
+                      const Text(
+                        'Requires accessory',
+                        style: TextStyle(fontStyle: FontStyle.italic),
+                      ),
+                    );
+                  }
+                  if (line.notes != null && line.notes!.trim().isNotEmpty) {
+                    notes.add(Text(line.notes!));
+                  }
+                  return ListTile(
+                    dense: true,
+                    title: Text('${line.mm}  × ${line.qty}'),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: notes,
+                    ),
+                  );
+                },
               ),
             ),
           ],

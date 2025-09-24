@@ -109,5 +109,184 @@ void main() {
       isTrue,
     );
   });
+
+  test('matrix generates part number for valid combination', () {
+    final std = StandardDef(
+      code: 'T',
+      name: 'Test',
+      parameters: [
+        ParameterDef(key: 'wire1', type: ParamType.enumType, allowedValues: ['1/0']),
+        ParameterDef(key: 'wire2', type: ParamType.enumType, allowedValues: ['2/0']),
+      ],
+      dynamicComponents: [
+        DynamicComponentDef(
+          name: 'Conn',
+          matrix: ConnectorMatrix(
+            axis1Parameter: 'wire1',
+            axis2Parameter: 'wire2',
+            rows: [
+              ConnectorMatrixRow(
+                axis1Value: '1/0',
+                cells: [ConnectorMatrixCell(axis2Value: '2/0', mm: 'MM#1200')],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final eng = RuleEngine();
+    final bom = eng.evaluate(std, {'wire1': '1/0', 'wire2': '2/0'});
+    expect(bom.single.mm, 'MM#1200');
+    expect(bom.single.source, 'matrix:Conn');
+    expect(bom.single.status, 'ok');
+  });
+
+  test('matrix can use pattern to generate SKU when mm missing', () {
+    final std = StandardDef(
+      code: 'T',
+      name: 'Test',
+      parameters: [
+        ParameterDef(key: 'wire1', type: ParamType.enumType, allowedValues: ['1/0']),
+        ParameterDef(key: 'wire2', type: ParamType.enumType, allowedValues: ['2/0']),
+      ],
+      dynamicComponents: [
+        DynamicComponentDef(
+          name: 'Conn',
+          mmPattern: 'AMP-{axis1}-{axis2}',
+          matrix: ConnectorMatrix(
+            axis1Parameter: 'wire1',
+            axis2Parameter: 'wire2',
+            rows: [
+              ConnectorMatrixRow(
+                axis1Value: '1/0',
+                cells: [ConnectorMatrixCell(axis2Value: '2/0')],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final eng = RuleEngine();
+    final bom = eng.evaluate(std, {'wire1': '1/0', 'wire2': '2/0'});
+    expect(bom.single.mm, 'AMP-1/0-2/0');
+    expect(bom.single.source, 'matrix:Conn');
+  });
+
+  test('matrix marks missing combination as invalid', () {
+    final std = StandardDef(
+      code: 'T',
+      name: 'Test',
+      parameters: [
+        ParameterDef(key: 'wire1', type: ParamType.enumType, allowedValues: ['1/0']),
+        ParameterDef(key: 'wire2', type: ParamType.enumType, allowedValues: ['2/0', '4/0']),
+      ],
+      dynamicComponents: [
+        DynamicComponentDef(
+          name: 'Conn',
+          matrix: ConnectorMatrix(
+            axis1Parameter: 'wire1',
+            axis2Parameter: 'wire2',
+            rows: [
+              ConnectorMatrixRow(
+                axis1Value: '1/0',
+                cells: [ConnectorMatrixCell(axis2Value: '2/0', mm: 'MM#1200')],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final eng = RuleEngine();
+    final bom = eng.evaluate(std, {'wire1': '1/0', 'wire2': '4/0'});
+    expect(bom.single.status, 'invalid');
+    expect(bom.single.qty, 0);
+    expect(bom.single.mm, 'INVALID');
+    expect(bom.single.notes, contains('No combination'));
+  });
+
+  test('matrix propagates accessory flags and notes', () {
+    final std = StandardDef(
+      code: 'T',
+      name: 'Test',
+      parameters: [
+        ParameterDef(key: 'wire1', type: ParamType.enumType, allowedValues: ['1/0']),
+        ParameterDef(key: 'wire2', type: ParamType.enumType, allowedValues: ['2/0']),
+      ],
+      dynamicComponents: [
+        DynamicComponentDef(
+          name: 'Conn',
+          matrix: ConnectorMatrix(
+            axis1Parameter: 'wire1',
+            axis2Parameter: 'wire2',
+            rows: [
+              ConnectorMatrixRow(
+                axis1Value: '1/0',
+                cells: [
+                  ConnectorMatrixCell(
+                    axis2Value: '2/0',
+                    mm: 'MM#1200',
+                    requiresAccessory: true,
+                    notes: 'Use reducer sleeve',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final eng = RuleEngine();
+    final bom = eng.evaluate(std, {'wire1': '1/0', 'wire2': '2/0'});
+    final line = bom.single;
+    expect(line.requiresAccessory, isTrue);
+    expect(line.notes, 'Use reducer sleeve');
+  });
+
+  test('matrix falls back to rules when no SKU is provided', () {
+    final std = StandardDef(
+      code: 'T',
+      name: 'Test',
+      parameters: [
+        ParameterDef(key: 'wire1', type: ParamType.enumType, allowedValues: ['1/0']),
+        ParameterDef(key: 'wire2', type: ParamType.enumType, allowedValues: ['2/0']),
+      ],
+      dynamicComponents: [
+        DynamicComponentDef(
+          name: 'Conn',
+          matrix: ConnectorMatrix(
+            axis1Parameter: 'wire1',
+            axis2Parameter: 'wire2',
+            rows: [
+              ConnectorMatrixRow(
+                axis1Value: '1/0',
+                cells: [ConnectorMatrixCell(axis2Value: '2/0')],
+              ),
+            ],
+          ),
+          rules: [
+            RuleDef(
+              expr: {
+                'and': [
+                  {'==': [
+                    {'var': 'wire1'},
+                    '1/0',
+                  ]},
+                  {'==': [
+                    {'var': 'wire2'},
+                    '2/0',
+                  ]},
+                ],
+              },
+              outputs: [OutputSpec(mm: 'MM#RULE', qty: 1)],
+            ),
+          ],
+        ),
+      ],
+    );
+    final eng = RuleEngine();
+    final bom = eng.evaluate(std, {'wire1': '1/0', 'wire2': '2/0'});
+    expect(bom.single.mm, 'MM#RULE');
+    expect(bom.single.source, 'rule:Conn');
+  });
 }
 
