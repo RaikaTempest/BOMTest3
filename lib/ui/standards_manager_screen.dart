@@ -1235,6 +1235,35 @@ class _StaticEditorState extends State<_StaticEditor> {
   late TextEditingController qty;
   late String _mmSource;
 
+  TextSelection _clampSelection(TextSelection selection, int maxLength) {
+    if (!selection.isValid) {
+      return TextSelection.collapsed(offset: maxLength);
+    }
+
+    int clampOffset(int offset) {
+      if (offset < 0) return 0;
+      if (offset > maxLength) return maxLength;
+      return offset;
+    }
+
+    return TextSelection(
+      baseOffset: clampOffset(selection.baseOffset),
+      extentOffset: clampOffset(selection.extentOffset),
+      affinity: selection.affinity,
+      isDirectional: selection.isDirectional,
+    );
+  }
+
+  void _syncController(TextEditingController controller, String text) {
+    if (controller.text == text) return;
+    final value = controller.value;
+    controller.value = value.copyWith(
+      text: text,
+      selection: _clampSelection(value.selection, text.length),
+      composing: TextRange.empty,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1249,10 +1278,10 @@ class _StaticEditorState extends State<_StaticEditor> {
   void didUpdateWidget(covariant _StaticEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.comp.mm != widget.comp.mm) {
-      mm.text = widget.comp.mm ?? '';
+      _syncController(mm, widget.comp.mm ?? '');
     }
     if (oldWidget.comp.qty != widget.comp.qty) {
-      qty.text = widget.comp.qty.toString();
+      _syncController(qty, widget.comp.qty.toString());
     }
     final dynamicName = widget.comp.dynamicMmComponent?.trim();
     final nextSource =
