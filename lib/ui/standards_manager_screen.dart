@@ -595,6 +595,13 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
             ),
           )
           .toList(),
+      matrix: source.matrix == null
+          ? null
+          : ConnectorMatrix.fromJson(
+              (jsonDecode(jsonEncode(source.matrix!.toJson())) as Map)
+                  .cast<String, dynamic>(),
+            ),
+      mmPattern: source.mmPattern,
     );
   }
 
@@ -619,7 +626,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         MaterialPageRoute(
           builder: (_) => DynamicComponentRulesScreen(
             component: dynamicComponents[index],
-            parameters: parameters,
+            parameters: globalParameters,
           ),
         ),
       );
@@ -710,11 +717,16 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
           );
           return;
         }
+        final trimmedPattern = c.mmPattern?.trim();
         cleanedDynamic.add(
           DynamicComponentDef(
             name: nameValue,
             selectionStrategy: c.selectionStrategy,
             rules: c.rules,
+            matrix: c.matrix,
+            mmPattern: trimmedPattern == null || trimmedPattern.isEmpty
+                ? null
+                : trimmedPattern,
           ),
         );
       }
@@ -1097,6 +1109,17 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                     def: e.value,
                     onChanged: (p) => _onParameterChanged(e.key, p),
                     onDelete: () => _removeParameterAt(e.key),
+                    keySuggestions: () {
+                      final suggestions = <String>{
+                        ...globalParameters
+                            .map((p) => p.key.trim())
+                            .where((k) => k.isNotEmpty),
+                        ...parameters
+                            .map((p) => p.key.trim())
+                            .where((k) => k.isNotEmpty),
+                      };
+                      return suggestions.toList();
+                    }(),
                   ),
                 )
                 .toList(),
@@ -1165,6 +1188,8 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                         name: name,
                         selectionStrategy: old.selectionStrategy,
                         rules: old.rules,
+                        matrix: old.matrix,
+                        mmPattern: old.mmPattern,
                       );
                       _combineGlobalDynamicComponents();
                     }),

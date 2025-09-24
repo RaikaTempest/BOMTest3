@@ -90,6 +90,8 @@ class _GlobalDynamicComponentsScreenState
         name: value,
         selectionStrategy: old.selectionStrategy,
         rules: old.rules,
+        matrix: old.matrix,
+        mmPattern: old.mmPattern,
       );
     });
   }
@@ -155,11 +157,16 @@ class _GlobalDynamicComponentsScreenState
           );
           return;
         }
+        final trimmedPattern = c.mmPattern?.trim();
         cleaned.add(
           DynamicComponentDef(
             name: name,
             selectionStrategy: c.selectionStrategy,
             rules: c.rules,
+            matrix: c.matrix,
+            mmPattern: trimmedPattern == null || trimmedPattern.isEmpty
+                ? null
+                : trimmedPattern,
           ),
         );
       }
