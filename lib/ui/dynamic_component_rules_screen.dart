@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
@@ -28,6 +30,8 @@ class _DynamicComponentRulesScreenState
   late TextEditingController _axis1Controller;
   late TextEditingController _axis2Controller;
   late TextEditingController _mmPatternController;
+  late FocusNode _axis1FocusNode;
+  late FocusNode _axis2FocusNode;
   bool _suspendAxisListeners = false;
 
   @override
@@ -44,6 +48,8 @@ class _DynamicComponentRulesScreenState
         TextEditingController(text: existingMatrix.axis2Parameter);
     _mmPatternController =
         TextEditingController(text: widget.component.mmPattern ?? '');
+    _axis1FocusNode = FocusNode();
+    _axis2FocusNode = FocusNode();
     _axis1Controller.addListener(_handleAxisControllersChanged);
     _axis2Controller.addListener(_handleAxisControllersChanged);
   }
@@ -55,7 +61,73 @@ class _DynamicComponentRulesScreenState
     _axis1Controller.dispose();
     _axis2Controller.dispose();
     _mmPatternController.dispose();
+    _axis1FocusNode.dispose();
+    _axis2FocusNode.dispose();
     super.dispose();
+  }
+
+  List<String> _allParameterKeys() {
+    final keys = <String>{};
+    for (final parameter in widget.parameters) {
+      final key = parameter.key.trim();
+      if (key.isEmpty) continue;
+      keys.add(key);
+    }
+    final sorted = keys.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return sorted;
+  }
+
+  Iterable<String> _parameterSuggestions(String query) {
+    final keys = _allParameterKeys();
+    if (keys.isEmpty) {
+      return const Iterable<String>.empty();
+    }
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      return keys;
+    }
+    final lower = trimmed.toLowerCase();
+    return keys.where((key) => key.toLowerCase().contains(lower));
+  }
+
+  Widget _buildAxisField({
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required String label,
+    required String helperText,
+  }) {
+    return RawAutocomplete<String>(
+      textEditingController: controller,
+      focusNode: focusNode,
+      optionsBuilder: (textEditingValue) {
+        return _parameterSuggestions(textEditingValue.text);
+      },
+      displayStringForOption: (option) => option,
+      fieldViewBuilder:
+          (context, textEditingController, fieldFocusNode, onFieldSubmitted) {
+        return TextField(
+          controller: textEditingController,
+          focusNode: fieldFocusNode,
+          decoration: InputDecoration(
+            labelText: label,
+            helperText: helperText,
+          ),
+          onEditingComplete: onFieldSubmitted,
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        return RawAutocomplete.defaultOptionsViewBuilder<String>(
+          context,
+          onSelected,
+          options,
+        );
+      },
+      onSelected: (selection) {
+        controller.selection =
+            TextSelection.collapsed(offset: selection.length);
+      },
+    );
   }
 
   void _handleAxisControllersChanged() {
@@ -484,24 +556,39 @@ class _DynamicComponentRulesScreenState
     _updateMatrix(_matrix.copyWith(rows: rows));
   }
 
-  void _showExportDialog() {
+  Future<void> _exportMatrixCsv() async {
     final csv = _matrixToCsv();
-    showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Matrix CSV'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SelectableText(csv),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
+    final suggestedName = _suggestedMatrixFilename();
+    try {
+      final location = await getSaveLocation(
+        suggestedName: suggestedName,
+        acceptedTypeGroups: const [
+          XTypeGroup(
+            label: 'CSV',
+            extensions: ['csv'],
           ),
         ],
-      ),
-    );
+      );
+      final path = location?.path;
+      if (path == null) {
+        return;
+      }
+      final file = XFile.fromData(
+        Uint8List.fromList(utf8.encode(csv)),
+        mimeType: 'text/csv',
+        name: suggestedName,
+      );
+      await file.saveTo(path);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Matrix exported to $path')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to export matrix: $e')),
+      );
+    }
   }
 
   void _showImportDialog() {
@@ -605,7 +692,7 @@ class _DynamicComponentRulesScreenState
                       _showImportDialog();
                       break;
                     case 'export':
-                      _showExportDialog();
+                      _exportMatrixCsv();
                       break;
                   }
                 },
@@ -664,22 +751,22 @@ class _DynamicComponentRulesScreenState
           Row(
             children: [
               Expanded(
-                child: TextField(
+                child: _buildAxisField(
                   controller: _axis1Controller,
-                  decoration: const InputDecoration(
-                    labelText: 'First axis parameter key',
-                    helperText: 'Matches a parameter in the job form (e.g., wire_1)',
-                  ),
+                  focusNode: _axis1FocusNode,
+                  label: 'First axis parameter key',
+                  helperText:
+                      'Matches a parameter in the job form (e.g., wire_1)',
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: TextField(
+                child: _buildAxisField(
                   controller: _axis2Controller,
-                  decoration: const InputDecoration(
-                    labelText: 'Second axis parameter key',
-                    helperText: 'Matches a parameter in the job form (e.g., wire_2)',
-                  ),
+                  focusNode: _axis2FocusNode,
+                  label: 'Second axis parameter key',
+                  helperText:
+                      'Matches a parameter in the job form (e.g., wire_2)',
                 ),
               ),
             ],
@@ -898,5 +985,13 @@ class _DynamicComponentRulesScreenState
       }
       return buffer.toString();
     }).join(', ');
+  }
+
+  String _suggestedMatrixFilename() {
+    final name = widget.component.name.trim();
+    final sanitized = name.isEmpty
+        ? 'dynamic_component_matrix'
+        : name.replaceAll(RegExp(r'[^A-Za-z0-9_\-]+'), '_');
+    return '$sanitized.csv';
   }
 }
