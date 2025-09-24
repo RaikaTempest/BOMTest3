@@ -197,17 +197,229 @@ class DynamicComponentDef {
   final String name;
   final String selectionStrategy; // 'most_specific'
   final List<RuleDef> rules;
-  DynamicComponentDef({required this.name, this.selectionStrategy = 'most_specific', this.rules = const []});
+  final ConnectorMatrix? matrix;
+  final String? mmPattern;
+
+  DynamicComponentDef({
+    required this.name,
+    this.selectionStrategy = 'most_specific',
+    this.rules = const [],
+    this.matrix,
+    this.mmPattern,
+  });
+
   factory DynamicComponentDef.fromJson(Map<String, dynamic> j) => DynamicComponentDef(
         name: j['name'] as String,
         selectionStrategy: j['selection_strategy'] as String? ?? 'most_specific',
         rules: (j['rules'] as List?)?.map((e) => RuleDef.fromJson((e as Map).cast<String, dynamic>())).toList() ?? const [],
+        matrix: j['matrix'] is Map
+            ? ConnectorMatrix.fromJson((j['matrix'] as Map).cast<String, dynamic>())
+            : null,
+        mmPattern: j['mm_pattern'] as String?,
       );
+
   Map<String, dynamic> toJson() => {
         'name': name,
         'selection_strategy': selectionStrategy,
         'rules': rules.map((e) => e.toJson()).toList(),
+        if (matrix != null) 'matrix': matrix!.toJson(),
+        if (mmPattern != null && mmPattern!.trim().isNotEmpty) 'mm_pattern': mmPattern,
       };
+
+  DynamicComponentDef copyWith({
+    String? name,
+    String? selectionStrategy,
+    List<RuleDef>? rules,
+    ConnectorMatrix? matrix,
+    String? mmPattern,
+  }) {
+    return DynamicComponentDef(
+      name: name ?? this.name,
+      selectionStrategy: selectionStrategy ?? this.selectionStrategy,
+      rules: rules ?? this.rules,
+      matrix: matrix ?? this.matrix,
+      mmPattern: mmPattern ?? this.mmPattern,
+    );
+  }
+}
+
+class ConnectorMatrix {
+  final String axis1Parameter; // e.g., wire 1 gauge
+  final String axis2Parameter; // e.g., wire 2 gauge
+  final List<ConnectorMatrixRow> rows;
+  final List<String> metadataColumns;
+
+  const ConnectorMatrix({
+    required this.axis1Parameter,
+    required this.axis2Parameter,
+    this.rows = const [],
+    this.metadataColumns = const [],
+  });
+
+  factory ConnectorMatrix.fromJson(Map<String, dynamic> j) => ConnectorMatrix(
+        axis1Parameter: j['axis1_parameter'] as String? ?? '',
+        axis2Parameter: j['axis2_parameter'] as String? ?? '',
+        rows: (j['rows'] as List?)
+                ?.whereType<Map>()
+                .map((e) => ConnectorMatrixRow.fromJson(e.cast<String, dynamic>()))
+                .toList() ??
+            const [],
+        metadataColumns: (j['metadata_columns'] as List?)
+                ?.whereType<String>()
+                .toList() ??
+            const [],
+      );
+
+  Map<String, dynamic> toJson() => {
+        'axis1_parameter': axis1Parameter,
+        'axis2_parameter': axis2Parameter,
+        'rows': rows.map((e) => e.toJson()).toList(),
+        if (metadataColumns.isNotEmpty) 'metadata_columns': metadataColumns,
+      };
+
+  List<String> get columnValues {
+    final values = <String>{};
+    for (final row in rows) {
+      for (final cell in row.cells) {
+        values.add(cell.axis2Value);
+      }
+    }
+    final sorted = values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return sorted;
+  }
+
+  ConnectorMatrixCell? lookup(Map<String, dynamic> inputs) {
+    final axis1Value = _stringify(inputs[axis1Parameter]);
+    final axis2Value = _stringify(inputs[axis2Parameter]);
+    if (axis1Value == null || axis2Value == null) {
+      return null;
+    }
+    for (final row in rows) {
+      if (row.axis1Value.toLowerCase() != axis1Value.toLowerCase()) {
+        continue;
+      }
+      for (final cell in row.cells) {
+        if (cell.axis2Value.toLowerCase() == axis2Value.toLowerCase()) {
+          return cell;
+        }
+      }
+    }
+    return null;
+  }
+
+  ConnectorMatrix copyWith({
+    String? axis1Parameter,
+    String? axis2Parameter,
+    List<ConnectorMatrixRow>? rows,
+    List<String>? metadataColumns,
+  }) {
+    return ConnectorMatrix(
+      axis1Parameter: axis1Parameter ?? this.axis1Parameter,
+      axis2Parameter: axis2Parameter ?? this.axis2Parameter,
+      rows: rows ?? this.rows,
+      metadataColumns: metadataColumns ?? this.metadataColumns,
+    );
+  }
+
+  String? valueForAxis(String axis, Map<String, dynamic> inputs) {
+    if (axis.isEmpty) return null;
+    return _stringify(inputs[axis]);
+  }
+
+  static String? _stringify(dynamic v) {
+    if (v == null) return null;
+    if (v is String) return v.trim();
+    if (v is num || v is bool) return '$v';
+    return v.toString();
+  }
+}
+
+class ConnectorMatrixRow {
+  final String axis1Value;
+  final List<ConnectorMatrixCell> cells;
+
+  const ConnectorMatrixRow({required this.axis1Value, this.cells = const []});
+
+  factory ConnectorMatrixRow.fromJson(Map<String, dynamic> j) => ConnectorMatrixRow(
+        axis1Value: j['axis1_value'] as String? ?? '',
+        cells: (j['cells'] as List?)
+                ?.whereType<Map>()
+                .map((e) => ConnectorMatrixCell.fromJson(e.cast<String, dynamic>()))
+                .toList() ??
+            const [],
+      );
+
+  Map<String, dynamic> toJson() => {
+        'axis1_value': axis1Value,
+        'cells': cells.map((e) => e.toJson()).toList(),
+      };
+
+  ConnectorMatrixRow copyWith({
+    String? axis1Value,
+    List<ConnectorMatrixCell>? cells,
+  }) {
+    return ConnectorMatrixRow(
+      axis1Value: axis1Value ?? this.axis1Value,
+      cells: cells ?? this.cells,
+    );
+  }
+}
+
+class ConnectorMatrixCell {
+  final String axis2Value;
+  final String? mm;
+  final int qty;
+  final bool enabled;
+  final bool requiresAccessory;
+  final String? notes;
+
+  const ConnectorMatrixCell({
+    required this.axis2Value,
+    this.mm,
+    this.qty = 1,
+    this.enabled = true,
+    this.requiresAccessory = false,
+    this.notes,
+  });
+
+  factory ConnectorMatrixCell.fromJson(Map<String, dynamic> j) => ConnectorMatrixCell(
+        axis2Value: j['axis2_value'] as String? ?? '',
+        mm: j['mm'] as String?,
+        qty: (j['qty'] as num?)?.toInt() ?? 1,
+        enabled: j['enabled'] as bool? ?? true,
+        requiresAccessory: j['requires_accessory'] as bool? ?? false,
+        notes: j['notes'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'axis2_value': axis2Value,
+        if (mm != null) 'mm': mm,
+        if (qty != 1) 'qty': qty,
+        if (!enabled) 'enabled': enabled,
+        if (requiresAccessory) 'requires_accessory': requiresAccessory,
+        if (notes != null && notes!.trim().isNotEmpty) 'notes': notes,
+      };
+
+  ConnectorMatrixCell copyWith({
+    String? axis2Value,
+    String? mm,
+    int? qty,
+    bool? enabled,
+    bool? requiresAccessory,
+    String? notes,
+  }) {
+    return ConnectorMatrixCell(
+      axis2Value: axis2Value ?? this.axis2Value,
+      mm: mm ?? this.mm,
+      qty: qty ?? this.qty,
+      enabled: enabled ?? this.enabled,
+      requiresAccessory: requiresAccessory ?? this.requiresAccessory,
+      notes: notes ?? this.notes,
+    );
+  }
+
+  bool get hasMm => (mm ?? '').trim().isNotEmpty;
 }
 
 class StandardDef {
@@ -297,8 +509,18 @@ class StandardApplication {
 class BomLine {
   final String mm;
   final int qty;
-  final String source; // 'static', 'static:<dc>' or 'rule:<dc>'
-  BomLine({required this.mm, required this.qty, required this.source});
+  final String source; // 'static', 'static:<dc>', 'rule:<dc>', or 'matrix:<dc>'
+  final String status; // ok / invalid
+  final bool requiresAccessory;
+  final String? notes;
+  BomLine({
+    required this.mm,
+    required this.qty,
+    required this.source,
+    this.status = 'ok',
+    this.requiresAccessory = false,
+    this.notes,
+  });
 }
 
 class CacheEntry {

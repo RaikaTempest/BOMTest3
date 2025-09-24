@@ -1315,6 +1315,54 @@ bool _rulesDeepEqual(List<RuleDef>? a, List<RuleDef>? b) {
   return true;
 }
 
+String _canonicalMatrixString(ConnectorMatrix? matrix) {
+  if (matrix == null) return 'null';
+  final metadata = [...matrix.metadataColumns]..sort();
+  final rows = matrix.rows
+      .map((row) {
+        final cells = [...row.cells]
+          ..sort((a, b) =>
+              a.axis2Value.toLowerCase().compareTo(b.axis2Value.toLowerCase()));
+        return {
+          'axis1_value': row.axis1Value,
+          'cells': cells.map((cell) {
+            final map = <String, dynamic>{
+              'axis2_value': cell.axis2Value,
+            };
+            if (cell.mm != null) map['mm'] = cell.mm;
+            if (cell.qty != 1) map['qty'] = cell.qty;
+            if (!cell.enabled) map['enabled'] = cell.enabled;
+            if (cell.requiresAccessory) {
+              map['requires_accessory'] = cell.requiresAccessory;
+            }
+            if (cell.notes != null && cell.notes!.trim().isNotEmpty) {
+              map['notes'] = cell.notes;
+            }
+            return map;
+          }).toList(),
+        };
+      })
+      .toList()
+    ..sort((a, b) => (a['axis1_value'] as String)
+        .toLowerCase()
+        .compareTo((b['axis1_value'] as String).toLowerCase()));
+  final json = <String, dynamic>{
+    'axis1_parameter': matrix.axis1Parameter,
+    'axis2_parameter': matrix.axis2Parameter,
+    'rows': rows,
+  };
+  if (metadata.isNotEmpty) {
+    json['metadata_columns'] = metadata;
+  }
+  return _canonicalJsonString(json);
+}
+
+bool _matrixDeepEqual(ConnectorMatrix? a, ConnectorMatrix? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return a == null && b == null;
+  return _canonicalMatrixString(a) == _canonicalMatrixString(b);
+}
+
 bool _dynamicComponentsEqual(
   DynamicComponentDef? a,
   DynamicComponentDef? b,
@@ -1323,7 +1371,9 @@ bool _dynamicComponentsEqual(
   if (a == null || b == null) return a == null && b == null;
   return a.name == b.name &&
       a.selectionStrategy == b.selectionStrategy &&
-      _rulesDeepEqual(a.rules, b.rules);
+      _rulesDeepEqual(a.rules, b.rules) &&
+      _matrixDeepEqual(a.matrix, b.matrix) &&
+      a.mmPattern == b.mmPattern;
 }
 
 dynamic _dynamicComponentFieldValue(
@@ -1338,6 +1388,10 @@ dynamic _dynamicComponentFieldValue(
       return def.selectionStrategy;
     case 'rules':
       return def.rules.map((rule) => _canonicalJsonString(rule.toJson())).toList();
+    case 'matrix':
+      return _canonicalMatrixString(def.matrix);
+    case 'mmPattern':
+      return def.mmPattern;
   }
   return null;
 }
@@ -1346,7 +1400,7 @@ Set<String> _dynamicComponentChangedFields(
   DynamicComponentDef? base,
   DynamicComponentDef? other,
 ) {
-  const fields = {'name', 'selectionStrategy', 'rules'};
+  const fields = {'name', 'selectionStrategy', 'rules', 'matrix', 'mmPattern'};
   if (base == null || other == null) {
     return {...fields};
   }
@@ -1375,6 +1429,10 @@ DynamicComponentDef _mergeDynamicComponent(
     rules: localChanged.contains('rules')
         ? List<RuleDef>.from(local.rules)
         : List<RuleDef>.from(remote.rules),
+    matrix: localChanged.contains('matrix') ? local.matrix : remote.matrix,
+    mmPattern: localChanged.contains('mmPattern')
+        ? local.mmPattern
+        : remote.mmPattern,
   );
 }
 
