@@ -6,12 +6,14 @@ class ParameterEditor extends StatefulWidget {
   final ParameterDef def;
   final ValueChanged<ParameterDef> onChanged;
   final VoidCallback onDelete;
+  final List<String> keySuggestions;
 
   const ParameterEditor({
     super.key,
     required this.def,
     required this.onChanged,
     required this.onDelete,
+    this.keySuggestions = const [],
   });
 
   @override
@@ -24,6 +26,7 @@ class _ParameterEditorState extends State<ParameterEditor> {
   late TextEditingController allowed;
   late bool requiredField;
   late ParamType type;
+  late FocusNode _keyFocusNode;
 
   @override
   void initState() {
@@ -33,6 +36,7 @@ class _ParameterEditorState extends State<ParameterEditor> {
     allowed = TextEditingController(text: widget.def.allowedValues.join(','));
     requiredField = widget.def.required;
     type = widget.def.type;
+    _keyFocusNode = FocusNode();
   }
 
   TextSelection _clampSelection(TextSelection selection, int maxLength) {
@@ -111,10 +115,65 @@ class _ParameterEditorState extends State<ParameterEditor> {
         Row(
           children: [
             Expanded(
-              child: TextField(
-                controller: key,
-                decoration: const InputDecoration(labelText: 'Key'),
-                onChanged: (_) => _notify(),
+              child: RawAutocomplete<String>(
+                textEditingController: key,
+                focusNode: _keyFocusNode,
+                optionsBuilder: (textEditingValue) {
+                  final query = textEditingValue.text.trim();
+                  if (query.isEmpty) {
+                    return const Iterable<String>.empty();
+                  }
+                  final lower = query.toLowerCase();
+                  final seen = <String>{};
+                  return widget.keySuggestions.where((option) {
+                    if (!seen.add(option)) return false;
+                    if (option.toLowerCase() == lower) return false;
+                    return option.toLowerCase().contains(lower);
+                  });
+                },
+                onSelected: (selection) {
+                  _syncController(key, selection);
+                  _notify();
+                },
+                fieldViewBuilder:
+                    (context, controller, focusNode, onFieldSubmitted) {
+                  return TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    decoration: const InputDecoration(labelText: 'Key'),
+                    onChanged: (_) => _notify(),
+                    onEditingComplete: onFieldSubmitted,
+                  );
+                },
+                optionsViewBuilder: (context, onSelected, options) {
+                  final theme = Theme.of(context);
+                  return Align(
+                    alignment: Alignment.bottomLeft,
+                    child: Material(
+                      elevation: 4,
+                      borderRadius: BorderRadius.circular(8),
+                      child: ConstrainedBox(
+                        constraints:
+                            const BoxConstraints(maxHeight: 200, minWidth: 200),
+                        child: ListView(
+                          padding: EdgeInsets.zero,
+                          shrinkWrap: true,
+                          children: options
+                              .map(
+                                (option) => ListTile(
+                                  title: Text(
+                                    option,
+                                    style: theme.textTheme.bodyMedium,
+                                  ),
+                                  onTap: () => onSelected(option),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
             const SizedBox(width: 12),
@@ -215,6 +274,7 @@ class _ParameterEditorState extends State<ParameterEditor> {
 
   @override
   void dispose() {
+    _keyFocusNode.dispose();
     key.dispose();
     unit.dispose();
     allowed.dispose();

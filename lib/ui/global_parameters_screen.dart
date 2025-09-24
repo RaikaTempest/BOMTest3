@@ -368,6 +368,11 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
                                       onChanged: (p) =>
                                           _onParameterChanged(entry.key, p),
                                       onDelete: () => _removeParameter(entry.key),
+                                      keySuggestions: parameters
+                                          .map((p) => p.key.trim())
+                                          .where((k) => k.isNotEmpty)
+                                          .toSet()
+                                          .toList(),
                                     ),
                                   );
                                 },
