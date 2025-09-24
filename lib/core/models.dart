@@ -290,17 +290,19 @@ class ConnectorMatrix {
   }
 
   ConnectorMatrixCell? lookup(Map<String, dynamic> inputs) {
-    final axis1Value = _stringify(inputs[axis1Parameter]);
-    final axis2Value = _stringify(inputs[axis2Parameter]);
+    final axis1Value = valueForAxis(axis1Parameter, inputs);
+    final axis2Value = valueForAxis(axis2Parameter, inputs);
     if (axis1Value == null || axis2Value == null) {
       return null;
     }
+    final normalizedAxis1 = _normalizeForComparison(axis1Value);
+    final normalizedAxis2 = _normalizeForComparison(axis2Value);
     for (final row in rows) {
-      if (row.axis1Value.toLowerCase() != axis1Value.toLowerCase()) {
+      if (_normalizeForComparison(row.axis1Value) != normalizedAxis1) {
         continue;
       }
       for (final cell in row.cells) {
-        if (cell.axis2Value.toLowerCase() == axis2Value.toLowerCase()) {
+        if (_normalizeForComparison(cell.axis2Value) == normalizedAxis2) {
           return cell;
         }
       }
@@ -330,8 +332,45 @@ class ConnectorMatrix {
   static String? _stringify(dynamic v) {
     if (v == null) return null;
     if (v is String) return v.trim();
-    if (v is num || v is bool) return '$v';
+    if (v is int) return v.toString();
+    if (v is num) {
+      final intValue = v.toInt();
+      if (v == intValue) {
+        return intValue.toString();
+      }
+      var s = v.toString();
+      if (s.contains('.')) {
+        s = s.replaceAll(RegExp(r'0+$'), '');
+        if (s.endsWith('.')) {
+          s = s.substring(0, s.length - 1);
+        }
+      }
+      return s;
+    }
+    if (v is bool) return v ? 'true' : 'false';
     return v.toString();
+  }
+
+  static String _normalizeForComparison(String? value) {
+    if (value == null) return '';
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '';
+    final numeric = num.tryParse(trimmed);
+    if (numeric != null) {
+      if (numeric is int) {
+        return numeric.toString();
+      }
+      if (numeric is double) {
+        if (!numeric.isFinite) {
+          return trimmed.toLowerCase();
+        }
+        if (numeric == numeric.roundToDouble()) {
+          return numeric.toInt().toString();
+        }
+        return numeric.toString();
+      }
+    }
+    return trimmed.toLowerCase();
   }
 }
 
