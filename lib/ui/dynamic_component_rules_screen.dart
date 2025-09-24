@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
@@ -484,24 +486,38 @@ class _DynamicComponentRulesScreenState
     _updateMatrix(_matrix.copyWith(rows: rows));
   }
 
-  void _showExportDialog() {
+  Future<void> _exportMatrixCsv() async {
     final csv = _matrixToCsv();
-    showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Matrix CSV'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SelectableText(csv),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
+    final suggestedName = _suggestedMatrixFilename();
+    try {
+      final path = await getSavePath(
+        suggestedName: suggestedName,
+        acceptedTypeGroups: const [
+          XTypeGroup(
+            label: 'CSV',
+            extensions: ['csv'],
           ),
         ],
-      ),
-    );
+      );
+      if (path == null) {
+        return;
+      }
+      final file = XFile.fromData(
+        Uint8List.fromList(utf8.encode(csv)),
+        mimeType: 'text/csv',
+        name: suggestedName,
+      );
+      await file.saveTo(path);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Matrix exported to $path')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to export matrix: $e')),
+      );
+    }
   }
 
   void _showImportDialog() {
@@ -605,7 +621,7 @@ class _DynamicComponentRulesScreenState
                       _showImportDialog();
                       break;
                     case 'export':
-                      _showExportDialog();
+                      _exportMatrixCsv();
                       break;
                   }
                 },
@@ -898,5 +914,13 @@ class _DynamicComponentRulesScreenState
       }
       return buffer.toString();
     }).join(', ');
+  }
+
+  String _suggestedMatrixFilename() {
+    final name = widget.component.name.trim();
+    final sanitized = name.isEmpty
+        ? 'dynamic_component_matrix'
+        : name.replaceAll(RegExp(r'[^A-Za-z0-9_\-]+'), '_');
+    return '$sanitized.csv';
   }
 }
