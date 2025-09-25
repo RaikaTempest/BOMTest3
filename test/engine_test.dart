@@ -172,6 +172,37 @@ void main() {
     expect(bom.single.source, 'matrix:Conn');
   });
 
+  test('matrix treats numeric axis values equivalently', () {
+    final std = StandardDef(
+      code: 'T',
+      name: 'Test',
+      parameters: [
+        ParameterDef(key: 'wire1', type: ParamType.number),
+        ParameterDef(key: 'wire2', type: ParamType.number),
+      ],
+      dynamicComponents: [
+        DynamicComponentDef(
+          name: 'Conn',
+          matrix: ConnectorMatrix(
+            axis1Parameter: 'wire1',
+            axis2Parameter: 'wire2',
+            rows: [
+              ConnectorMatrixRow(
+                axis1Value: '4',
+                cells: [ConnectorMatrixCell(axis2Value: '4', mm: 'MM#NUM')],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final eng = RuleEngine();
+    final bomInt = eng.evaluate(std, {'wire1': 4, 'wire2': 4});
+    expect(bomInt.single.mm, 'MM#NUM');
+    final bomDouble = eng.evaluate(std, {'wire1': 4.0, 'wire2': 4.0});
+    expect(bomDouble.single.mm, 'MM#NUM');
+  });
+
   test('matrix marks missing combination as invalid', () {
     final std = StandardDef(
       code: 'T',
