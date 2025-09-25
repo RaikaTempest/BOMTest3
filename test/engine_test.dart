@@ -273,6 +273,43 @@ void main() {
     expect(line.notes, 'Use reducer sleeve');
   });
 
+  test('matrix emits multiple BOM lines when multiple SKUs are provided', () {
+    final std = StandardDef(
+      code: 'T',
+      name: 'Test',
+      parameters: [
+        ParameterDef(key: 'wire1', type: ParamType.enumType, allowedValues: ['1/0']),
+        ParameterDef(key: 'wire2', type: ParamType.enumType, allowedValues: ['2/0']),
+      ],
+      dynamicComponents: [
+        DynamicComponentDef(
+          name: 'Conn',
+          matrix: ConnectorMatrix(
+            axis1Parameter: 'wire1',
+            axis2Parameter: 'wire2',
+            rows: [
+              ConnectorMatrixRow(
+                axis1Value: '1/0',
+                cells: [
+                  ConnectorMatrixCell(
+                    axis2Value: '2/0',
+                    mms: ['MM#1200', 'MM#1201'],
+                    qty: 2,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final eng = RuleEngine();
+    final bom = eng.evaluate(std, {'wire1': '1/0', 'wire2': '2/0'});
+    expect(bom, hasLength(2));
+    expect(bom.map((line) => line.mm), ['MM#1200', 'MM#1201']);
+    expect(bom.every((line) => line.qty == 2), isTrue);
+  });
+
   test('matrix falls back to rules when no SKU is provided', () {
     final std = StandardDef(
       code: 'T',

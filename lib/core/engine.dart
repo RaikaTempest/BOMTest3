@@ -41,8 +41,8 @@ class RuleEngine {
         String? mm;
         if (provider != null) {
           final matrixResult = matrixSelection(provider);
-          if (matrixResult.status == 'ok' && matrixResult.mm != null) {
-            mm = matrixResult.mm;
+          if (matrixResult.status == 'ok' && matrixResult.primaryMm != null) {
+            mm = matrixResult.primaryMm;
           }
         }
         mm ??= provider != null ? _firstNonEmptyMm(selectRule(provider)) : null;
@@ -63,16 +63,21 @@ class RuleEngine {
     for (final dc in std.dynamicComponents) {
       final matrixResult = matrixSelection(dc);
       if (matrixResult.shouldEmitLine) {
-        bom.add(
-          BomLine(
-            mm: matrixResult.mm ?? 'INVALID',
-            qty: matrixResult.qty,
-            source: 'matrix:${dc.name}',
-            status: matrixResult.status,
-            requiresAccessory: matrixResult.requiresAccessory,
-            notes: matrixResult.notes,
-          ),
-        );
+        final emittedMms = matrixResult.mms.isEmpty
+            ? const ['INVALID']
+            : matrixResult.mms;
+        for (final mm in emittedMms) {
+          bom.add(
+            BomLine(
+              mm: mm,
+              qty: matrixResult.qty,
+              source: 'matrix:${dc.name}',
+              status: matrixResult.status,
+              requiresAccessory: matrixResult.requiresAccessory,
+              notes: matrixResult.notes,
+            ),
+          );
+        }
       }
       if (matrixResult.blockRules) {
         continue;
@@ -146,7 +151,7 @@ class RuleEngine {
         notes: null,
         blockRules: false,
         shouldEmitLine: false,
-        mm: null,
+        mms: const [],
       );
     }
     final cell = matrix.lookup(inputs);
@@ -159,7 +164,7 @@ class RuleEngine {
         notes: note,
         blockRules: true,
         shouldEmitLine: true,
-        mm: 'INVALID',
+        mms: const ['INVALID'],
       );
     }
     if (!cell.enabled) {
@@ -173,11 +178,11 @@ class RuleEngine {
         notes: note,
         blockRules: true,
         shouldEmitLine: true,
-        mm: 'INVALID',
+        mms: const ['INVALID'],
       );
     }
-    final mm = _resolveMatrixMm(dc, matrix, inputs, cell);
-    if (mm == null || mm.isEmpty) {
+    final mms = _resolveMatrixMms(dc, matrix, inputs, cell);
+    if (mms.isEmpty) {
       return _MatrixSelection(
         status: 'pending',
         qty: cell.qty,
@@ -185,7 +190,7 @@ class RuleEngine {
         notes: cell.notes,
         blockRules: false,
         shouldEmitLine: false,
-        mm: null,
+        mms: const [],
       );
     }
     return _MatrixSelection(
@@ -195,22 +200,22 @@ class RuleEngine {
       notes: cell.notes,
       blockRules: false,
       shouldEmitLine: true,
-      mm: mm,
+      mms: mms,
     );
   }
 
-  String? _resolveMatrixMm(
+  List<String> _resolveMatrixMms(
     DynamicComponentDef dc,
     ConnectorMatrix matrix,
     Map<String, dynamic> inputs,
     ConnectorMatrixCell cell,
   ) {
     if (cell.hasMm) {
-      return cell.mm?.trim();
+      return cell.mms;
     }
     final pattern = dc.mmPattern;
     if (pattern == null || pattern.trim().isEmpty) {
-      return null;
+      return const [];
     }
     final axis1Value = matrix.valueForAxis(matrix.axis1Parameter, inputs) ?? '';
     final axis2Value = matrix.valueForAxis(matrix.axis2Parameter, inputs) ?? '';
@@ -231,7 +236,7 @@ class RuleEngine {
       },
     );
     final trimmed = resolved.trim();
-    return trimmed.isEmpty ? null : trimmed;
+    return trimmed.isEmpty ? const [] : [trimmed];
   }
 }
 
@@ -242,25 +247,27 @@ class _MatrixSelection {
   final String? notes;
   final bool blockRules;
   final bool shouldEmitLine;
-  final String? mm;
+  final List<String> mms;
 
-  const _MatrixSelection({
+  _MatrixSelection({
     required this.status,
     required this.qty,
     required this.requiresAccessory,
     required this.notes,
     required this.blockRules,
     required this.shouldEmitLine,
-    required this.mm,
-  });
+    required List<String> mms,
+  }) : mms = List.unmodifiable(mms);
 
-  factory _MatrixSelection.none() => const _MatrixSelection(
+  String? get primaryMm => mms.isEmpty ? null : mms.first;
+
+  factory _MatrixSelection.none() => _MatrixSelection(
         status: 'none',
         qty: 0,
         requiresAccessory: false,
         notes: null,
         blockRules: false,
         shouldEmitLine: false,
-        mm: null,
+        mms: const [],
       );
 }
