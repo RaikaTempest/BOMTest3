@@ -407,50 +407,92 @@ class ConnectorMatrixRow {
 
 class ConnectorMatrixCell {
   final String axis2Value;
-  final String? mm;
+  final List<String> mms;
   final int qty;
   final bool enabled;
   final bool requiresAccessory;
   final String? notes;
 
-  const ConnectorMatrixCell({
+  ConnectorMatrixCell({
     required this.axis2Value,
-    this.mm,
+    List<String>? mms,
+    String? mm,
     this.qty = 1,
     this.enabled = true,
     this.requiresAccessory = false,
     this.notes,
-  });
+  }) : mms = _normalizeMms(mms, mm);
 
-  factory ConnectorMatrixCell.fromJson(Map<String, dynamic> j) => ConnectorMatrixCell(
-        axis2Value: j['axis2_value'] as String? ?? '',
-        mm: j['mm'] as String?,
-        qty: (j['qty'] as num?)?.toInt() ?? 1,
-        enabled: j['enabled'] as bool? ?? true,
-        requiresAccessory: j['requires_accessory'] as bool? ?? false,
-        notes: j['notes'] as String?,
-      );
+  static List<String> _normalizeMms(List<String>? mms, String? mm) {
+    if (mms != null) {
+      final cleaned = mms
+          .map((e) => e.trim())
+          .where((element) => element.isNotEmpty)
+          .toList();
+      if (cleaned.isNotEmpty) {
+        return List.unmodifiable(cleaned);
+      }
+    }
+    final trimmed = mm?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) {
+      return List.unmodifiable([trimmed]);
+    }
+    return const [];
+  }
 
-  Map<String, dynamic> toJson() => {
-        'axis2_value': axis2Value,
-        if (mm != null) 'mm': mm,
-        if (qty != 1) 'qty': qty,
-        if (!enabled) 'enabled': enabled,
-        if (requiresAccessory) 'requires_accessory': requiresAccessory,
-        if (notes != null && notes!.trim().isNotEmpty) 'notes': notes,
-      };
+  factory ConnectorMatrixCell.fromJson(Map<String, dynamic> j) {
+    final dynamic rawMms = j.containsKey('mms') ? j['mms'] : j['mm'];
+    List<String>? parsedMms;
+    String? singleMm;
+    if (rawMms is List) {
+      parsedMms = rawMms.map((e) => '$e').toList();
+    } else if (rawMms is String) {
+      singleMm = rawMms;
+    }
+    return ConnectorMatrixCell(
+      axis2Value: j['axis2_value'] as String? ?? '',
+      mms: parsedMms,
+      mm: singleMm,
+      qty: (j['qty'] as num?)?.toInt() ?? 1,
+      enabled: j['enabled'] as bool? ?? true,
+      requiresAccessory: j['requires_accessory'] as bool? ?? false,
+      notes: j['notes'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    final map = <String, dynamic>{
+      'axis2_value': axis2Value,
+    };
+    if (mms.length == 1) {
+      map['mm'] = mms.first;
+    } else if (mms.isNotEmpty) {
+      map['mms'] = mms;
+    }
+    if (qty != 1) map['qty'] = qty;
+    if (!enabled) map['enabled'] = enabled;
+    if (requiresAccessory) {
+      map['requires_accessory'] = requiresAccessory;
+    }
+    if (notes != null && notes!.trim().isNotEmpty) {
+      map['notes'] = notes;
+    }
+    return map;
+  }
 
   ConnectorMatrixCell copyWith({
     String? axis2Value,
+    List<String>? mms,
     String? mm,
     int? qty,
     bool? enabled,
     bool? requiresAccessory,
     String? notes,
   }) {
+    final nextMms = mms ?? (mm != null ? [mm] : this.mms);
     return ConnectorMatrixCell(
       axis2Value: axis2Value ?? this.axis2Value,
-      mm: mm ?? this.mm,
+      mms: nextMms,
       qty: qty ?? this.qty,
       enabled: enabled ?? this.enabled,
       requiresAccessory: requiresAccessory ?? this.requiresAccessory,
@@ -458,7 +500,9 @@ class ConnectorMatrixCell {
     );
   }
 
-  bool get hasMm => (mm ?? '').trim().isNotEmpty;
+  String? get mm => mms.isEmpty ? null : mms.first;
+
+  bool get hasMm => mms.isNotEmpty;
 }
 
 class StandardDef {

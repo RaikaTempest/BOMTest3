@@ -184,6 +184,21 @@ class _DynamicComponentRulesScreenState
     return list;
   }
 
+  List<String> _parseMatrixMmInput(String raw) {
+    if (raw.trim().isEmpty) return const [];
+    final parts = raw.split(RegExp(r'[\n,;|]+'));
+    final seen = <String>{};
+    final result = <String>[];
+    for (final part in parts) {
+      final trimmed = part.trim();
+      if (trimmed.isEmpty) continue;
+      if (seen.add(trimmed)) {
+        result.add(trimmed);
+      }
+    }
+    return result;
+  }
+
   ConnectorMatrix? _matrixForSave() {
     final rows = <ConnectorMatrixRow>[];
     for (final row in _matrix.rows) {
@@ -418,7 +433,8 @@ class _DynamicComponentRulesScreenState
 
   Future<void> _editCell(String rowValue, String columnValue) async {
     final existing = _findCell(rowValue, columnValue);
-    final mmController = TextEditingController(text: existing.mm ?? '');
+    final mmController =
+        TextEditingController(text: existing.mms.join('\n'));
     final qtyController = TextEditingController(text: existing.qty.toString());
     final notesController = TextEditingController(text: existing.notes ?? '');
     var enabled = existing.enabled;
@@ -437,7 +453,12 @@ class _DynamicComponentRulesScreenState
                   children: [
                     TextField(
                       controller: mmController,
-                      decoration: const InputDecoration(labelText: 'Part number'),
+                      decoration: const InputDecoration(
+                        labelText: 'Part numbers',
+                        helperText: 'Enter one part number per line',
+                      ),
+                      minLines: 1,
+                      maxLines: 4,
                     ),
                     TextField(
                       controller: qtyController,
@@ -481,12 +502,11 @@ class _DynamicComponentRulesScreenState
                 TextButton(
                   onPressed: () {
                     final qty = int.tryParse(qtyController.text.trim());
+                    final mms = _parseMatrixMmInput(mmController.text);
                     Navigator.of(context).pop(
                       ConnectorMatrixCell(
                         axis2Value: columnValue,
-                        mm: mmController.text.trim().isEmpty
-                            ? null
-                            : mmController.text.trim(),
+                        mms: mms,
                         qty: qty ?? 1,
                         enabled: enabled,
                         requiresAccessory: requiresAccessory,
@@ -521,7 +541,7 @@ class _DynamicComponentRulesScreenState
         final line = [
           _csvEscape(row.axis1Value),
           _csvEscape(column),
-          _csvEscape(cell.mm ?? ''),
+          _csvEscape(cell.mms.join(' | ')),
           _csvEscape(cell.qty.toString()),
           _csvEscape(cell.enabled ? 'true' : 'false'),
           _csvEscape(cell.requiresAccessory ? 'true' : 'false'),
@@ -549,7 +569,8 @@ class _DynamicComponentRulesScreenState
       if (axis1.isEmpty || axis2.isEmpty) {
         continue;
       }
-      final mm = parts.length > 2 ? parts[2].trim() : '';
+      final mmField = parts.length > 2 ? parts[2].trim() : '';
+      final mms = _parseMatrixMmInput(mmField);
       final qtyString = parts.length > 3 ? parts[3].trim() : '1';
       final enabledString = parts.length > 4 ? parts[4].trim() : 'true';
       final requiresAccessoryString =
@@ -561,7 +582,7 @@ class _DynamicComponentRulesScreenState
       rowsByAxis1.putIfAbsent(axis1, () => <ConnectorMatrixCell>[]).add(
             ConnectorMatrixCell(
               axis2Value: axis2,
-              mm: mm.isEmpty ? null : mm,
+              mms: mms,
               qty: qty,
               enabled: enabled,
               requiresAccessory: requiresAccessory,
@@ -894,9 +915,12 @@ class _DynamicComponentRulesScreenState
     if (!cell.enabled) {
       content.add(const Icon(Icons.block, size: 18, color: Colors.redAccent));
     }
-    final mm = cell.mm;
-    if (mm != null && mm.isNotEmpty) {
-      content.add(Text(mm, style: const TextStyle(fontWeight: FontWeight.bold)));
+    if (cell.mms.isNotEmpty) {
+      for (final mm in cell.mms) {
+        content.add(
+          Text(mm, style: const TextStyle(fontWeight: FontWeight.bold)),
+        );
+      }
     }
     if (cell.requiresAccessory) {
       content.add(const Text('Accessory required', style: TextStyle(fontSize: 11)));

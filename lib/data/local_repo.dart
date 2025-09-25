@@ -1329,7 +1329,11 @@ String _canonicalMatrixString(ConnectorMatrix? matrix) {
             final map = <String, dynamic>{
               'axis2_value': cell.axis2Value,
             };
-            if (cell.mm != null) map['mm'] = cell.mm;
+            if (cell.mms.length == 1) {
+              map['mm'] = cell.mms.first;
+            } else if (cell.mms.isNotEmpty) {
+              map['mms'] = cell.mms;
+            }
             if (cell.qty != 1) map['qty'] = cell.qty;
             if (!cell.enabled) map['enabled'] = cell.enabled;
             if (cell.requiresAccessory) {
