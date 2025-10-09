@@ -505,11 +505,18 @@ class ConnectorMatrixCell {
   bool get hasMm => mms.isNotEmpty;
 }
 
+String _standardCategoryOrDefault(String? value) {
+  if (value == null) return 'Misc.';
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? 'Misc.' : trimmed;
+}
+
 class StandardDef {
   final String code;
   final String name;
   final String version;
   final String status; // draft/published/deprecated
+  final String category;
   final List<ParameterDef> parameters;
   final List<StaticComponent> staticComponents;
   final List<DynamicComponentDef> dynamicComponents;
@@ -520,17 +527,19 @@ class StandardDef {
     required this.name,
     this.version = '1.0.0',
     this.status = 'draft',
+    String? category,
     this.parameters = const [],
     this.staticComponents = const [],
     this.dynamicComponents = const [],
     this.applicationId,
-  });
+  }) : category = _standardCategoryOrDefault(category);
 
   factory StandardDef.fromJson(Map<String, dynamic> j) => StandardDef(
         code: j['code'] as String,
         name: j['name'] as String? ?? '',
         version: j['version'] as String? ?? '1.0.0',
         status: j['status'] as String? ?? 'draft',
+        category: j['category'] as String?,
         parameters: (j['parameters'] as List?)?.map((e) => ParameterDef.fromJson((e as Map).cast<String, dynamic>())).toList() ?? const [],
         staticComponents: (j['static_components'] as List?)?.map((e) => StaticComponent.fromJson((e as Map).cast<String, dynamic>())).toList() ?? const [],
         dynamicComponents: (j['dynamic_components'] as List?)?.map((e) => DynamicComponentDef.fromJson((e as Map).cast<String, dynamic>())).toList() ?? const [],
@@ -542,6 +551,7 @@ class StandardDef {
         'name': name,
         'version': version,
         'status': status,
+        'category': category,
         'parameters': parameters.map((e) => e.toJson()).toList(),
         'static_components': staticComponents.map((e) => e.toJson()).toList(),
         'dynamic_components': dynamicComponents.map((e) => e.toJson()).toList(),

@@ -215,6 +215,7 @@ class BomExporter {
         name: std.name,
         version: std.version,
         status: std.status,
+        category: std.category,
         parameters: std.parameters,
         staticComponents: std.staticComponents,
         dynamicComponents: [

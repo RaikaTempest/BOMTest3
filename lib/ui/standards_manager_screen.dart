@@ -194,6 +194,7 @@ class _StandardDetailScreen extends StatefulWidget {
 class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   late final TextEditingController code;
   late final TextEditingController name;
+  late final TextEditingController category;
   List<ParameterDef> parameters = [];
   final List<String> _parameterIds = [];
   int _nextParameterId = 0;
@@ -651,6 +652,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     final e = widget.existing;
     code = TextEditingController(text: e?.code ?? '');
     name = TextEditingController(text: e?.name ?? '');
+    category = TextEditingController(text: e?.category ?? '');
     parameters = e?.parameters.toList() ?? [];
     _resetParameterIds();
     staticComponents = e?.staticComponents.toList() ?? [];
@@ -666,6 +668,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   void dispose() {
     code.dispose();
     name.dispose();
+    category.dispose();
     super.dispose();
   }
 
@@ -734,6 +737,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       final std = StandardDef(
         code: code.text.trim(),
         name: name.text.trim(),
+        category: category.text.trim(),
         parameters: cleaned,
         staticComponents: staticComponents,
         dynamicComponents: cleanedDynamic,
@@ -1092,6 +1096,11 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
             TextField(
               controller: name,
               decoration: const InputDecoration(labelText: 'Name'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: category,
+              decoration: const InputDecoration(labelText: 'Category'),
             ),
             const SizedBox(height: 8),
             const Text('Parameters'),
