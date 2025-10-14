@@ -336,6 +336,131 @@ class _ProjectScreenState extends State<ProjectScreen> {
   }
 }
 
+class _StandardSelectionDialog extends StatefulWidget {
+  final List<StandardDef> choices;
+
+  const _StandardSelectionDialog({required this.choices});
+
+  @override
+  State<_StandardSelectionDialog> createState() =>
+      _StandardSelectionDialogState();
+}
+
+class _StandardSelectionDialogState extends State<_StandardSelectionDialog> {
+  late final TextEditingController _search;
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _search = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  String _categoryLabel(StandardDef std) {
+    final value = std.category.trim();
+    return value.isEmpty ? 'Misc.' : value;
+  }
+
+  Iterable<Widget> _buildListTiles(
+    BuildContext context,
+    List<MapEntry<String, List<StandardDef>>> groups,
+  ) sync* {
+    final theme = Theme.of(context);
+    for (final entry in groups) {
+      yield Container(
+        width: double.infinity,
+        color: theme.colorScheme.surfaceVariant,
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        child: Text(
+          entry.key,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+      for (final std in entry.value) {
+        yield ListTile(
+          dense: true,
+          title: Text('${std.code} — ${std.name}'),
+          onTap: () => Navigator.of(context).pop(std.code),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lowerQuery = _query.toLowerCase();
+    final filtered = widget.choices.where((s) {
+      if (lowerQuery.isEmpty) return true;
+      return s.code.toLowerCase().contains(lowerQuery) ||
+          s.name.toLowerCase().contains(lowerQuery);
+    }).toList()
+      ..sort((a, b) {
+        final categoryA = _categoryLabel(a).toLowerCase();
+        final categoryB = _categoryLabel(b).toLowerCase();
+        final categoryCompare = categoryA.compareTo(categoryB);
+        if (categoryCompare != 0) return categoryCompare;
+        return a.code.toLowerCase().compareTo(b.code.toLowerCase());
+      });
+
+    final grouped = <String, List<StandardDef>>{};
+    for (final std in filtered) {
+      final category = _categoryLabel(std);
+      grouped.putIfAbsent(category, () => []).add(std);
+    }
+    final groupEntries = grouped.entries.toList()
+      ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+
+    return AlertDialog(
+      title: const Text('Add Standard'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _search,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Search standards',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (value) => setState(() {
+                _query = value.trim();
+              }),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 320,
+              child: filtered.isEmpty
+                  ? const Center(child: Text('No standards match your search.'))
+                  : ListView(
+                      padding: EdgeInsets.zero,
+                      children:
+                          _buildListTiles(context, groupEntries).toList(),
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+}
+
 class LocationStandardsScreen extends StatefulWidget {
   final List<StandardDef> available;
   final Set<String> selected;
@@ -388,17 +513,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     if (choices.isEmpty) return;
     final code = await showDialog<String>(
       context: context,
-      builder: (_) => SimpleDialog(
-        title: const Text('Add Standard'),
-        children: choices
-            .map(
-              (s) => SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, s.code),
-                child: Text('${s.code} — ${s.name}'),
-              ),
-            )
-            .toList(),
-      ),
+      builder: (_) => _StandardSelectionDialog(choices: choices),
     );
     if (code != null) {
       setState(() {
