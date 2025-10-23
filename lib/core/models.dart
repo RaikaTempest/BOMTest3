@@ -16,6 +16,8 @@
 //
 // After tests pass, we'll add persistence (path_provider) and real Flutter pages.
 
+import 'package:uuid/uuid.dart';
+
 // ==============================
 // lib/core/models.dart
 // ==============================
@@ -512,6 +514,7 @@ String _standardCategoryOrDefault(String? value) {
 }
 
 class StandardDef {
+  final String id;
   final String code;
   final String name;
   final String version;
@@ -523,6 +526,7 @@ class StandardDef {
   final String? applicationId; // originating StandardApplication
 
   StandardDef({
+    required this.id,
     required this.code,
     required this.name,
     this.version = '1.0.0',
@@ -534,19 +538,34 @@ class StandardDef {
     this.applicationId,
   }) : category = _standardCategoryOrDefault(category);
 
-  factory StandardDef.fromJson(Map<String, dynamic> j) => StandardDef(
-        code: j['code'] as String,
-        name: j['name'] as String? ?? '',
-        version: j['version'] as String? ?? '1.0.0',
-        status: j['status'] as String? ?? 'draft',
-        category: j['category'] as String?,
-        parameters: (j['parameters'] as List?)?.map((e) => ParameterDef.fromJson((e as Map).cast<String, dynamic>())).toList() ?? const [],
-        staticComponents: (j['static_components'] as List?)?.map((e) => StaticComponent.fromJson((e as Map).cast<String, dynamic>())).toList() ?? const [],
-        dynamicComponents: (j['dynamic_components'] as List?)?.map((e) => DynamicComponentDef.fromJson((e as Map).cast<String, dynamic>())).toList() ?? const [],
-        applicationId: j['application_id'] as String?,
-      );
+  factory StandardDef.fromJson(Map<String, dynamic> j) {
+    final rawId = (j['id'] as String?)?.trim();
+    final id = (rawId == null || rawId.isEmpty) ? const Uuid().v4() : rawId;
+    return StandardDef(
+      id: id,
+      code: j['code'] as String,
+      name: j['name'] as String? ?? '',
+      version: j['version'] as String? ?? '1.0.0',
+      status: j['status'] as String? ?? 'draft',
+      category: j['category'] as String?,
+      parameters: (j['parameters'] as List?)
+              ?.map((e) => ParameterDef.fromJson((e as Map).cast<String, dynamic>()))
+              .toList() ??
+          const [],
+      staticComponents: (j['static_components'] as List?)
+              ?.map((e) => StaticComponent.fromJson((e as Map).cast<String, dynamic>()))
+              .toList() ??
+          const [],
+      dynamicComponents: (j['dynamic_components'] as List?)
+              ?.map((e) => DynamicComponentDef.fromJson((e as Map).cast<String, dynamic>()))
+              .toList() ??
+          const [],
+      applicationId: j['application_id'] as String?,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
+        'id': id,
         'code': code,
         'name': name,
         'version': version,
@@ -627,25 +646,63 @@ class CacheEntry {
 
 class WorkLocation {
   String barcode;
-  Set<String> standards;
+  Map<String, String> standards;
   Map<String, dynamic> variables;
   WorkLocation({
     this.barcode = '',
-    Set<String>? standards,
+    Map<String, String>? standards,
     Map<String, dynamic>? variables,
-  })  : standards = standards ?? <String>{},
+  })  : standards = standards ?? <String, String>{},
         variables = variables ?? <String, dynamic>{};
 
-  factory WorkLocation.fromJson(Map<String, dynamic> j) => WorkLocation(
-        barcode: j['barcode'] as String? ?? '',
-        standards:
-            (j['standards'] as List?)?.map((e) => e.toString()).toSet() ?? <String>{},
-        variables: (j['variables'] as Map?)?.cast<String, dynamic>() ?? {},
-      );
+  factory WorkLocation.fromJson(Map<String, dynamic> j) {
+    final refs = <String, String>{};
+    final rawRefs = j['standard_refs'];
+    if (rawRefs is List) {
+      for (final entry in rawRefs) {
+        if (entry is Map) {
+          final rawId = entry['id'] ?? entry['standard_id'];
+          final rawCode = entry['code'] ?? entry['standard_code'];
+          final id = rawId == null ? null : rawId.toString().trim();
+          final code = rawCode == null ? null : rawCode.toString().trim();
+          if (id != null && id.isNotEmpty && code != null && code.isNotEmpty) {
+            refs[id] = code;
+          }
+        }
+      }
+    } else if (rawRefs is Map) {
+      rawRefs.forEach((key, value) {
+        final id = key.toString().trim();
+        final code = value == null ? null : value.toString().trim();
+        if (id.isNotEmpty && code != null && code.isNotEmpty) {
+          refs[id] = code;
+        }
+      });
+    }
+    if (refs.isEmpty) {
+      final legacy = j['standards'];
+      if (legacy is List) {
+        for (final entry in legacy) {
+          final code = entry == null ? null : entry.toString().trim();
+          if (code == null || code.isEmpty) continue;
+          refs.putIfAbsent(code, () => code);
+        }
+      }
+    }
+    return WorkLocation(
+      barcode: j['barcode'] as String? ?? '',
+      standards: refs,
+      variables: (j['variables'] as Map?)?.cast<String, dynamic>() ?? {},
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'barcode': barcode,
-        'standards': standards.toList(),
+        'standards': standards.values.toList(),
+        'standard_refs': [
+          for (final entry in standards.entries)
+            {'id': entry.key, 'code': entry.value},
+        ],
         'variables': variables,
       };
 }

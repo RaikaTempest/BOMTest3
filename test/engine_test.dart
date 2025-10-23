@@ -1,10 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:uuid/uuid.dart';
 import 'package:bom_builder/core/models.dart';
 import 'package:bom_builder/core/engine.dart';
+
+const Uuid _uuid = Uuid();
 
 void main() {
   test('numeric equality treats 4 and 4.0 as equal', () {
     final std = StandardDef(
+      id: _uuid.v4(),
       code: 'T', name: 'Test',
       parameters: [ParameterDef(key: 'PoleHeight', type: ParamType.number)],
       dynamicComponents: [
@@ -22,6 +26,7 @@ void main() {
 
   test('in operator matches enum values', () {
     final std = StandardDef(
+      id: _uuid.v4(),
       code: 'T', name: 'Test',
       parameters: [ParameterDef(key: 'Wire', type: ParamType.enumType, allowedValues: ['1/0','2/0'])],
       dynamicComponents: [
@@ -38,6 +43,7 @@ void main() {
 
   test('priority and specificity choose the right rule', () {
     final std = StandardDef(
+      id: _uuid.v4(),
       code: 'T', name: 'Test',
       parameters: [ParameterDef(key: 'PoleHeight', type: ParamType.number)],
       dynamicComponents: [
@@ -54,6 +60,7 @@ void main() {
 
   test('qty formula computes simple arithmetic', () {
     final std = StandardDef(
+      id: _uuid.v4(),
       code: 'T', name: 'Test',
       parameters: [ParameterDef(key: 'span_ft', type: ParamType.number)],
       dynamicComponents: [
@@ -70,6 +77,7 @@ void main() {
 
   test('static component can borrow MM from dynamic provider', () {
     final std = StandardDef(
+      id: _uuid.v4(),
       code: 'T',
       name: 'Test',
       staticComponents: [
@@ -112,6 +120,7 @@ void main() {
 
   test('matrix generates part number for valid combination', () {
     final std = StandardDef(
+      id: _uuid.v4(),
       code: 'T',
       name: 'Test',
       parameters: [
@@ -143,6 +152,7 @@ void main() {
 
   test('matrix can use pattern to generate SKU when mm missing', () {
     final std = StandardDef(
+      id: _uuid.v4(),
       code: 'T',
       name: 'Test',
       parameters: [
@@ -174,6 +184,7 @@ void main() {
 
   test('matrix treats numeric axis values equivalently', () {
     final std = StandardDef(
+      id: _uuid.v4(),
       code: 'T',
       name: 'Test',
       parameters: [
@@ -205,6 +216,7 @@ void main() {
 
   test('matrix marks missing combination as invalid', () {
     final std = StandardDef(
+      id: _uuid.v4(),
       code: 'T',
       name: 'Test',
       parameters: [
@@ -237,6 +249,7 @@ void main() {
 
   test('matrix propagates accessory flags and notes', () {
     final std = StandardDef(
+      id: _uuid.v4(),
       code: 'T',
       name: 'Test',
       parameters: [
@@ -275,6 +288,7 @@ void main() {
 
   test('matrix emits multiple BOM lines when multiple SKUs are provided', () {
     final std = StandardDef(
+      id: _uuid.v4(),
       code: 'T',
       name: 'Test',
       parameters: [
@@ -312,6 +326,7 @@ void main() {
 
   test('matrix falls back to rules when no SKU is provided', () {
     final std = StandardDef(
+      id: _uuid.v4(),
       code: 'T',
       name: 'Test',
       parameters: [

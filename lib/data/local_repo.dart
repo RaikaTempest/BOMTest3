@@ -143,7 +143,15 @@ class LocalStandardsRepo implements StandardsRepo {
       if (f is File && f.path.endsWith('.json')) {
         final txt = await f.readAsString();
         final j = jsonDecode(txt) as Map<String, dynamic>;
-        out.add(StandardDef.fromJson(j));
+        final existingId = (j['id'] as String?)?.trim();
+        final std = StandardDef.fromJson(j);
+        out.add(std);
+        if (existingId == null || existingId.isEmpty) {
+          await f.writeAsString(
+            jsonEncode(std.toJson()),
+            flush: true,
+          );
+        }
       }
     }
     out.sort((a, b) => a.code.compareTo(b.code));
@@ -153,9 +161,10 @@ class LocalStandardsRepo implements StandardsRepo {
   @override
   Future<StandardSaveResult> saveStandard(StandardSaveRequest request) async {
     final updated = request.updated;
-    final f = await _stdFile(updated.code);
-    return _withFileLock(f, () async {
-      final remote = await _readStandardIfExists(f);
+    final originalCode = request.original?.code ?? updated.code;
+    final fileToLock = await _stdFile(originalCode);
+    return _withFileLock(fileToLock, () async {
+      final remote = await _readStandardIfExists(fileToLock);
       final plan = LocalStandardsRepo.planStandardMerge(
         original: request.original,
         updated: updated,
@@ -164,13 +173,40 @@ class LocalStandardsRepo implements StandardsRepo {
 
       var wroteFile = false;
       if (plan.conflict == null && plan.needsWrite && plan.finalStandard != null) {
-        final tmp = File('${f.path}.tmp');
+        final finalStandard = plan.finalStandard!;
+        final newCode = finalStandard.code;
+        if (originalCode != newCode) {
+          final destinationFile = await _stdFile(newCode);
+          if (await destinationFile.exists()) {
+            final destinationStandard = await _readStandardIfExists(destinationFile);
+            return StandardSaveResult(
+              merged: remote,
+              conflict: StandardSaveConflict(
+                id: finalStandard.id,
+                code: newCode,
+                type: StandardSaveConflictType.alreadyExists,
+                original: request.original,
+                local: finalStandard,
+                remote: destinationStandard,
+              ),
+              wroteFile: false,
+              alreadyUpToDate: false,
+            );
+          }
+        }
+
+        final tmp = File('${fileToLock.path}.tmp');
         await tmp.writeAsString(
-          jsonEncode(plan.finalStandard!.toJson()),
+          jsonEncode(finalStandard.toJson()),
           flush: true,
         );
-        await tmp.rename(f.path);
+        await tmp.rename(fileToLock.path);
         wroteFile = true;
+
+        if (originalCode != newCode) {
+          final destinationFile = await _stdFile(newCode);
+          await fileToLock.rename(destinationFile.path);
+        }
       }
 
       return StandardSaveResult(
@@ -561,6 +597,7 @@ class LocalStandardsRepo implements StandardsRepo {
       return StandardMergePlan(
         finalStandard: remote,
         conflict: StandardSaveConflict(
+          id: updated.id,
           code: updated.code,
           type: StandardSaveConflictType.alreadyExists,
           original: null,
@@ -575,6 +612,7 @@ class LocalStandardsRepo implements StandardsRepo {
       return StandardMergePlan(
         finalStandard: null,
         conflict: StandardSaveConflict(
+          id: original.id,
           code: updated.code,
           type: StandardSaveConflictType.deletedRemotely,
           original: original,
@@ -613,6 +651,7 @@ class LocalStandardsRepo implements StandardsRepo {
     return StandardMergePlan(
       finalStandard: remote,
       conflict: StandardSaveConflict(
+        id: updated.id,
         code: updated.code,
         type: StandardSaveConflictType.updatedRemotely,
         original: original,

@@ -22,22 +22,25 @@ class BomExporter {
       flaggedLookup[key] = flagged;
     }
     final matchedFlagged = <String, FlaggedMaterial>{};
+    final standardsById = <String, StandardDef>{};
     final standardsByCode = <String, StandardDef>{};
     for (final std in standards) {
+      standardsById[std.id] = std;
       standardsByCode[std.code] = std;
     }
     final dynamicLookup = _buildDynamicComponentLookup(standards);
     final standardsWithDependencies = <String, StandardDef>{};
     final injectedDynamicNames = <String, Set<String>>{};
-    for (final entry in standardsByCode.entries) {
-      final resolved =
-          _withDynamicDependencies(entry.value, dynamicLookup);
-      standardsWithDependencies[entry.key] = resolved.standard;
-      injectedDynamicNames[entry.key] = resolved.injectedNames;
+    for (final std in standards) {
+      final resolved = _withDynamicDependencies(std, dynamicLookup);
+      standardsWithDependencies[std.id] = resolved.standard;
+      injectedDynamicNames[std.id] = resolved.injectedNames;
     }
     for (final loc in locations) {
-      for (final code in loc.standards) {
-        final base = standardsByCode[code];
+      for (final entry in loc.standards.entries) {
+        final id = entry.key;
+        final codeHint = entry.value;
+        final base = standardsById[id] ?? standardsByCode[codeHint];
         if (base == null) {
           continue;
         }
@@ -46,8 +49,8 @@ class BomExporter {
             base.dynamicComponents.isEmpty) {
           continue;
         }
-        final stdWithDeps = standardsWithDependencies[code] ?? base;
-        final injected = injectedDynamicNames[code] ?? const <String>{};
+        final stdWithDeps = standardsWithDependencies[base.id] ?? base;
+        final injected = injectedDynamicNames[base.id] ?? const <String>{};
         final lines = engine.evaluate(stdWithDeps, loc.variables);
         final staticConsumersByDynamic = <String, List<StaticComponent>>{};
         if (base.staticComponents.isNotEmpty && injected.isNotEmpty) {
@@ -211,6 +214,7 @@ class BomExporter {
     }
     return (
       standard: StandardDef(
+        id: std.id,
         code: std.code,
         name: std.name,
         version: std.version,

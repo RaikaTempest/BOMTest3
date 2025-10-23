@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 
 import '../core/models.dart';
 import '../data/repo.dart';
@@ -207,6 +208,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   List<DynamicComponentDef> globalDynamicComponents = [];
   bool _loadingGlobalDynamicComponents = true;
   StandardDef? _originalStandard;
+  late String _standardId;
   List<ParameterDef> _originalGlobalParameters = [];
   List<ParameterDef> _serverGlobalParameters = [];
   List<DynamicComponentDef> _originalGlobalDynamicComponents = [];
@@ -659,6 +661,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     dynamicComponents = e?.dynamicComponents.toList() ?? [];
     _resetDynamicComponentIds();
     _originalStandard = e;
+    _standardId = e?.id ?? const Uuid().v4();
     _combineGlobalDynamicComponents();
     _loadGlobalParameters();
     _loadGlobalDynamicComponents();
@@ -735,6 +738,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       }
 
       final std = StandardDef(
+        id: _standardId,
         code: code.text.trim(),
         name: name.text.trim(),
         category: category.text.trim(),
@@ -809,6 +813,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
 
       final standardResult = await widget.repo.saveStandard(
         StandardSaveRequest(
+          id: _standardId,
           original: _originalStandard,
           updated: std,
         ),
@@ -830,7 +835,11 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
             List<DynamicComponentDef>.from(dynamicResult.merged);
         _originalGlobalDynamicComponents =
             List<DynamicComponentDef>.from(dynamicResult.merged);
-        _originalStandard = standardResult.merged;
+        final mergedStandard = standardResult.merged;
+        if (mergedStandard != null) {
+          _standardId = mergedStandard.id;
+        }
+        _originalStandard = mergedStandard;
         _resetParameterIds();
         _resetDynamicComponentIds();
         globalParameters = List<ParameterDef>.from(_serverGlobalParameters);
@@ -1007,6 +1016,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       if (remote != null && mounted) {
         setState(() {
           _originalStandard = remote;
+          _standardId = remote.id;
           code.text = remote.code;
           name.text = remote.name;
           parameters = remote.parameters.toList();
