@@ -86,19 +86,27 @@ class ParameterDef {
 }
 
 class StaticComponent {
+  final String? label;
   final String? mm;
   final String? dynamicMmComponent;
   final int qty;
 
-  const StaticComponent({this.mm, this.dynamicMmComponent, required this.qty});
+  const StaticComponent({
+    this.label,
+    this.mm,
+    this.dynamicMmComponent,
+    required this.qty,
+  });
 
   factory StaticComponent.fromJson(Map<String, dynamic> j) => StaticComponent(
+        label: j['label'] as String?,
         mm: j['mm'] as String?,
         dynamicMmComponent: j['dynamic_mm_component'] as String?,
         qty: (j['qty'] as num).toInt(),
       );
 
   Map<String, dynamic> toJson() => {
+        if (label != null) 'label': label,
         if (mm != null) 'mm': mm,
         if (dynamicMmComponent != null)
           'dynamic_mm_component': dynamicMmComponent,
@@ -625,6 +633,7 @@ class BomLine {
   final String status; // ok / invalid
   final bool requiresAccessory;
   final String? notes;
+  final String? label;
   BomLine({
     required this.mm,
     required this.qty,
@@ -632,6 +641,7 @@ class BomLine {
     this.status = 'ok',
     this.requiresAccessory = false,
     this.notes,
+    this.label,
   });
 }
 

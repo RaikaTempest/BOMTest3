@@ -70,7 +70,9 @@ class _DebugRepoScreenState extends State<DebugRepoScreen> {
       code: 'FS12',
       name: 'Framing Standard 12',
       parameters: [ParameterDef(key: 'PoleHeight', type: ParamType.number)],
-      staticComponents: [StaticComponent(mm: 'MM#BRACE-STD', qty: 2)],
+      staticComponents: [
+        StaticComponent(label: 'Brace', mm: 'MM#BRACE-STD', qty: 2),
+      ],
       dynamicComponents: [
         DynamicComponentDef(name: 'Primary Connector', rules: [
           RuleDef(expr: {">=": [ {"var":"PoleHeight"}, 40 ]}, outputs: [OutputSpec(mm: "MM#PC-40", qty: 1)]),

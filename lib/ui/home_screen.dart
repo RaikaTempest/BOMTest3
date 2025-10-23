@@ -162,7 +162,9 @@ class _JobTabState extends State<_JobTab> {
         code: 'FS12',
         name: 'Framing Standard 12',
         parameters: [ParameterDef(key: 'PoleHeight', type: ParamType.number)],
-        staticComponents: [StaticComponent(mm: 'MM#BRACE-STD', qty: 2)],
+        staticComponents: [
+          StaticComponent(label: 'Brace', mm: 'MM#BRACE-STD', qty: 2),
+        ],
         dynamicComponents: [
           DynamicComponentDef(
             name: 'Primary Connector',

@@ -81,7 +81,12 @@ void main() {
       code: 'T',
       name: 'Test',
       staticComponents: [
-        StaticComponent(mm: 'MM#FALLBACK', dynamicMmComponent: 'Conn', qty: 5),
+        StaticComponent(
+          label: 'Brace',
+          mm: 'MM#FALLBACK',
+          dynamicMmComponent: 'Conn',
+          qty: 5,
+        ),
       ],
       dynamicComponents: [
         DynamicComponentDef(name: 'Conn', rules: [
@@ -112,10 +117,28 @@ void main() {
 
     expect(
       bom.any(
-        (line) => line.source == 'static:Conn' && line.mm == 'MM#SMALL' && line.qty == 5,
+        (line) =>
+            line.source == 'static:Conn' &&
+            line.mm == 'MM#SMALL' &&
+            line.qty == 5 &&
+            line.label == 'Brace',
       ),
       isTrue,
     );
+  });
+
+  test('static component label persists through serialization', () {
+    final component = StaticComponent(label: 'Brace', mm: 'MM#B', qty: 2);
+    final std = StandardDef(
+      id: _uuid.v4(),
+      code: 'T',
+      name: 'Test',
+      staticComponents: [component],
+    );
+
+    final roundTripped = StandardDef.fromJson(std.toJson());
+    expect(roundTripped.staticComponents.single.label, 'Brace');
+    expect(roundTripped.staticComponents.single.mm, 'MM#B');
   });
 
   test('matrix generates part number for valid combination', () {

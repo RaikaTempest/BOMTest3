@@ -19,6 +19,7 @@ ParameterDef _cloneParameterDef(ParameterDef source) => ParameterDef(
     );
 
 StaticComponent _cloneStaticComponent(StaticComponent source) => StaticComponent(
+      label: source.label,
       mm: source.mm,
       dynamicMmComponent: source.dynamicMmComponent,
       qty: source.qty,
@@ -841,13 +842,29 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         );
       }
 
+      final cleanedStatic = <StaticComponent>[];
+      for (final c in staticComponents) {
+        final label = c.label?.trim();
+        final mm = c.mm?.trim();
+        final dynamicMm = c.dynamicMmComponent?.trim();
+        cleanedStatic.add(
+          StaticComponent(
+            label: label == null || label.isEmpty ? null : label,
+            mm: mm == null || mm.isEmpty ? null : mm,
+            dynamicMmComponent:
+                dynamicMm == null || dynamicMm.isEmpty ? null : dynamicMm,
+            qty: c.qty,
+          ),
+        );
+      }
+
       final std = StandardDef(
         id: _standardId,
         code: code.text.trim(),
         name: name.text.trim(),
         category: category.text.trim(),
         parameters: cleaned,
-        staticComponents: staticComponents,
+        staticComponents: cleanedStatic,
         dynamicComponents: cleanedDynamic,
       );
 
@@ -1384,6 +1401,7 @@ class _StaticEditor extends StatefulWidget {
 
 class _StaticEditorState extends State<_StaticEditor> {
   static const String _literalOption = '__literal__';
+  late TextEditingController label;
   late TextEditingController mm;
   late TextEditingController qty;
   late String _mmSource;
@@ -1420,6 +1438,7 @@ class _StaticEditorState extends State<_StaticEditor> {
   @override
   void initState() {
     super.initState();
+    label = TextEditingController(text: widget.comp.label ?? '');
     mm = TextEditingController(text: widget.comp.mm ?? '');
     qty = TextEditingController(text: widget.comp.qty.toString());
     final dynamicName = widget.comp.dynamicMmComponent?.trim();
@@ -1430,6 +1449,9 @@ class _StaticEditorState extends State<_StaticEditor> {
   @override
   void didUpdateWidget(covariant _StaticEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.comp.label != widget.comp.label) {
+      _syncController(label, widget.comp.label ?? '');
+    }
     if (oldWidget.comp.mm != widget.comp.mm) {
       _syncController(mm, widget.comp.mm ?? '');
     }
@@ -1446,8 +1468,10 @@ class _StaticEditorState extends State<_StaticEditor> {
 
   void _notify() {
     final literal = mm.text.trim();
+    final labelText = label.text.trim();
     widget.onChanged(
       StaticComponent(
+        label: labelText.isEmpty ? null : labelText,
         mm: literal.isEmpty ? null : literal,
         dynamicMmComponent:
             _mmSource == _literalOption ? null : _mmSource,
@@ -1497,6 +1521,14 @@ class _StaticEditorState extends State<_StaticEditor> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  TextField(
+                    controller: label,
+                    decoration: const InputDecoration(
+                      labelText: 'Label (optional)',
+                    ),
+                    onChanged: (_) => _notify(),
+                  ),
+                  const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     value: _mmSource,
                     decoration: const InputDecoration(labelText: 'MM Source'),
@@ -1542,6 +1574,7 @@ class _StaticEditorState extends State<_StaticEditor> {
 
   @override
   void dispose() {
+    label.dispose();
     mm.dispose();
     qty.dispose();
     super.dispose();
