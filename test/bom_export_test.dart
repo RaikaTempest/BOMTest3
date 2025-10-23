@@ -1,15 +1,18 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:uuid/uuid.dart';
 import 'package:bom_builder/core/models.dart';
 import 'package:bom_builder/core/bom_exporter.dart';
 
 void main() {
   test('buildCsv aggregates location BOM without flagged section', () {
     final std1 = StandardDef(
+      id: const Uuid().v4(),
       code: 'S1',
       name: 'Std1',
       staticComponents: [StaticComponent(mm: 'MM1', qty: 1)],
     );
     final std2 = StandardDef(
+      id: const Uuid().v4(),
       code: 'S2',
       name: 'Std2',
       dynamicComponents: [
@@ -20,8 +23,11 @@ void main() {
     );
 
     final locations = [
-      WorkLocation(barcode: 'L1', standards: {'S1'}),
-      WorkLocation(barcode: 'L2', standards: {'S1', 'S2'}),
+      WorkLocation(barcode: 'L1', standards: {std1.id: std1.code}),
+      WorkLocation(
+        barcode: 'L2',
+        standards: {std1.id: std1.code, std2.id: std2.code},
+      ),
     ];
 
     final exporter = BomExporter();
@@ -40,11 +46,13 @@ void main() {
 
   test('buildCsv appends flagged materials section when matches exist', () {
     final std1 = StandardDef(
+      id: const Uuid().v4(),
       code: 'S1',
       name: 'Std1',
       staticComponents: [StaticComponent(mm: 'MM1', qty: 1)],
     );
     final std2 = StandardDef(
+      id: const Uuid().v4(),
       code: 'S2',
       name: 'Std2',
       dynamicComponents: [
@@ -55,7 +63,10 @@ void main() {
     );
 
     final locations = [
-      WorkLocation(barcode: 'L1', standards: {'S1', 'S2'}),
+      WorkLocation(
+        barcode: 'L1',
+        standards: {std1.id: std1.code, std2.id: std2.code},
+      ),
     ];
 
     final flagged = [
@@ -114,6 +125,7 @@ void main() {
       }, outputs: [OutputSpec(mm: 'MM#GLOBAL', qty: 3)])
     ]);
     final stdPrimary = StandardDef(
+      id: const Uuid().v4(),
       code: 'PRIMARY',
       name: 'Primary',
       staticComponents: [
@@ -128,13 +140,14 @@ void main() {
       ],
     );
     final library = StandardDef(
+      id: const Uuid().v4(),
       code: 'LIB',
       name: 'Library',
       dynamicComponents: [sharedDynamic],
     );
 
     final locations = [
-      WorkLocation(barcode: 'L-100', standards: {'PRIMARY'}),
+      WorkLocation(barcode: 'L-100', standards: {stdPrimary.id: stdPrimary.code}),
     ];
 
     final exporter = BomExporter();

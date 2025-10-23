@@ -27,13 +27,40 @@ class WebStandardsRepo implements StandardsRepo {
     html.window.localStorage[key] = jsonEncode(map);
   }
 
+  Map<String, StandardDef> _loadNormalizedStandards() {
+    final raw = _getMap(_kStandards);
+    final normalized = <String, StandardDef>{};
+    var mutated = false;
+    for (final entry in raw.entries) {
+      final value = entry.value;
+      if (value is Map) {
+        final std = StandardDef.fromJson(value.cast<String, dynamic>());
+        normalized[std.id] = std;
+        if (std.id != entry.key) {
+          mutated = true;
+        }
+        final existingId = (value['id'] as String?)?.trim();
+        if (existingId == null || existingId.isEmpty) {
+          mutated = true;
+        }
+      }
+    }
+    if (mutated || normalized.length != raw.length) {
+      _setMap(
+        _kStandards,
+        {
+          for (final entry in normalized.entries)
+            entry.key: entry.value.toJson(),
+        },
+      );
+    }
+    return normalized;
+  }
+
   @override
   Future<List<StandardDef>> listStandards() async {
-    final m = _getMap(_kStandards);
-    final out = <StandardDef>[];
-    for (final e in m.entries) {
-      out.add(StandardDef.fromJson((e.value as Map).cast<String, dynamic>()));
-    }
+    final normalized = _loadNormalizedStandards();
+    final out = normalized.values.toList();
     out.sort((a, b) => a.code.compareTo(b.code));
     return out;
   }
@@ -41,16 +68,18 @@ class WebStandardsRepo implements StandardsRepo {
   @override
   Future<StandardSaveResult> saveStandard(StandardSaveRequest request) async {
     final updated = request.updated;
-    final m = _getMap(_kStandards);
-    StandardDef? remote;
-    final raw = m[updated.code];
-    if (raw is Map) {
-      remote = StandardDef.fromJson(raw.cast<String, dynamic>());
-    }
+    final standards = _loadNormalizedStandards();
+    final remote = standards[request.id];
     final unchanged = remote != null && _standardEquals(remote, updated);
     if (!unchanged) {
-      m[updated.code] = updated.toJson();
-      _setMap(_kStandards, m);
+      standards[request.id] = updated;
+      _setMap(
+        _kStandards,
+        {
+          for (final entry in standards.entries)
+            entry.key: entry.value.toJson(),
+        },
+      );
     }
     return StandardSaveResult(
       merged: unchanged ? remote : updated,
@@ -62,9 +91,24 @@ class WebStandardsRepo implements StandardsRepo {
 
   @override
   Future<void> deleteStandard(String code) async {
-    final m = _getMap(_kStandards);
-    m.remove(code);
-    _setMap(_kStandards, m);
+    final standards = _loadNormalizedStandards();
+    final toRemove = standards.entries
+        .where((entry) => entry.value.code == code)
+        .map((entry) => entry.key)
+        .toList();
+    if (toRemove.isEmpty) {
+      return;
+    }
+    for (final key in toRemove) {
+      standards.remove(key);
+    }
+    _setMap(
+      _kStandards,
+      {
+        for (final entry in standards.entries)
+          entry.key: entry.value.toJson(),
+      },
+    );
   }
 
   @override

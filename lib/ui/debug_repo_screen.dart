@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../core/models.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
@@ -65,6 +66,7 @@ class _DebugRepoScreenState extends State<DebugRepoScreen> {
     if (repo == null) return;
     // force overwrite FS12 with the known-good demo
     final std = StandardDef(
+      id: const Uuid().v4(),
       code: 'FS12',
       name: 'Framing Standard 12',
       parameters: [ParameterDef(key: 'PoleHeight', type: ParamType.number)],
@@ -77,7 +79,7 @@ class _DebugRepoScreenState extends State<DebugRepoScreen> {
       ],
     );
     await repo.saveStandard(
-      StandardSaveRequest(updated: std),
+      StandardSaveRequest(id: std.id, updated: std),
     ); // overwrite
     final list = await repo.listStandards();
     setState(() {

@@ -25,18 +25,25 @@ abstract class StandardsRepo {
 }
 
 class StandardSaveRequest {
+  final String id;
   final StandardDef? original;
   final StandardDef updated;
 
-  const StandardSaveRequest({
+  StandardSaveRequest({
+    required this.id,
     this.original,
     required this.updated,
-  });
+  })  : assert(id.isNotEmpty, 'StandardSaveRequest id cannot be empty'),
+        assert(id == updated.id,
+            'StandardSaveRequest id must match updated standard id'),
+        assert(original == null || original.id == id,
+            'StandardSaveRequest id must match original standard id');
 }
 
 enum StandardSaveConflictType { alreadyExists, updatedRemotely, deletedRemotely }
 
 class StandardSaveConflict {
+  final String id;
   final String code;
   final StandardSaveConflictType type;
   final StandardDef? original;
@@ -44,6 +51,7 @@ class StandardSaveConflict {
   final StandardDef? remote;
 
   const StandardSaveConflict({
+    required this.id,
     required this.code,
     required this.type,
     this.original,

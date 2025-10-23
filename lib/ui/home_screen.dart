@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:uuid/uuid.dart';
 
 import '../core/models.dart';
 import '../data/project_repo.dart';
@@ -157,6 +158,7 @@ class _JobTabState extends State<_JobTab> {
     var list = await repo.listStandards();
     if (list.isEmpty) {
       final std = StandardDef(
+        id: const Uuid().v4(),
         code: 'FS12',
         name: 'Framing Standard 12',
         parameters: [ParameterDef(key: 'PoleHeight', type: ParamType.number)],
@@ -188,7 +190,7 @@ class _JobTabState extends State<_JobTab> {
         ],
       );
       await repo.saveStandard(
-        StandardSaveRequest(updated: std),
+        StandardSaveRequest(id: std.id, updated: std),
       );
       list = await repo.listStandards();
     }

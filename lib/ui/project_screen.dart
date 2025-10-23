@@ -75,15 +75,18 @@ class _ProjectScreenState extends State<ProjectScreen> {
       MaterialPageRoute(
         builder: (_) => LocationStandardsScreen(
           available: allStds,
-          selected: locations[index].standards,
+          selected: Map<String, String>.from(locations[index].standards),
           variables: locations[index].variables,
         ),
       ),
     );
     if (result != null) {
       setState(() {
-        locations[index].standards =
-            (result['standards'] as Set).cast<String>();
+        final rawStandards =
+            (result['standards'] as Map).cast<dynamic, dynamic>();
+        locations[index].standards = rawStandards.map(
+          (key, value) => MapEntry(key.toString(), value.toString()),
+        );
         locations[index].variables =
             Map<String, dynamic>.from(result['variables'] as Map);
       });
@@ -389,7 +392,7 @@ class _StandardSelectionDialogState extends State<_StandardSelectionDialog> {
         yield ListTile(
           dense: true,
           title: Text('${std.code} — ${std.name}'),
-          onTap: () => Navigator.of(context).pop(std.code),
+          onTap: () => Navigator.of(context).pop(std),
         );
       }
     }
@@ -463,7 +466,7 @@ class _StandardSelectionDialogState extends State<_StandardSelectionDialog> {
 
 class LocationStandardsScreen extends StatefulWidget {
   final List<StandardDef> available;
-  final Set<String> selected;
+  final Map<String, String> selected;
   final Map<String, dynamic> variables;
   const LocationStandardsScreen({
     super.key,
@@ -478,23 +481,62 @@ class LocationStandardsScreen extends StatefulWidget {
 }
 
 class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
-  late Set<String> selected;
+  late Map<String, String> selected;
   late Map<String, dynamic> vars;
   late List<StandardDef> available;
+
+  StandardDef? _findStandardByRef(String id, String code) {
+    final trimmedId = id.trim();
+    if (trimmedId.isNotEmpty) {
+      for (final std in available) {
+        if (std.id == trimmedId) {
+          return std;
+        }
+      }
+    }
+    final trimmedCode = code.trim();
+    if (trimmedCode.isEmpty) {
+      return null;
+    }
+    for (final std in available) {
+      if (std.code == trimmedCode) {
+        return std;
+      }
+    }
+    return null;
+  }
+
+  void _hydrateSelectedFromAvailable() {
+    final updated = <String, String>{};
+    for (final entry in selected.entries) {
+      final std = _findStandardByRef(entry.key, entry.value);
+      if (std != null) {
+        updated[std.id] = std.code;
+      } else if (entry.value.isNotEmpty) {
+        updated[entry.key] = entry.value;
+      }
+    }
+    selected
+      ..clear()
+      ..addAll(updated);
+  }
 
   @override
   void initState() {
     super.initState();
-    selected = Set.of(widget.selected);
+    selected = Map<String, String>.from(widget.selected);
     vars = Map<String, dynamic>.from(widget.variables);
     available = widget.available;
+    _hydrateSelectedFromAvailable();
   }
 
   List<ParameterDef> _gatherParams() {
     final map = <String, ParameterDef>{};
-    for (final code in selected) {
-      final std = available.firstWhere((s) => s.code == code,
-          orElse: () => StandardDef(code: code, name: ''));
+    for (final entry in selected.entries) {
+      final std = _findStandardByRef(entry.key, entry.value);
+      if (std == null) {
+        continue;
+      }
       for (final p in std.parameters) {
         map[p.key] = p;
       }
@@ -508,16 +550,19 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
   }
 
   Future<void> _addStandard() async {
-    final choices =
-        available.where((s) => !selected.contains(s.code)).toList();
+    final takenIds = selected.keys.toSet();
+    final takenCodes = selected.values.toSet();
+    final choices = available
+        .where((s) => !takenIds.contains(s.id) && !takenCodes.contains(s.code))
+        .toList();
     if (choices.isEmpty) return;
-    final code = await showDialog<String>(
+    final std = await showDialog<StandardDef>(
       context: context,
       builder: (_) => _StandardSelectionDialog(choices: choices),
     );
-    if (code != null) {
+    if (std != null) {
       setState(() {
-        selected.add(code);
+        selected[std.id] = std.code;
         _pruneVars();
       });
     }
@@ -529,7 +574,10 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     );
     final repo = await createRepo();
     final list = await repo.listStandards();
-    setState(() => available = list);
+    setState(() {
+      available = list;
+      _hydrateSelectedFromAvailable();
+    });
   }
 
   Widget _buildParamField(ParameterDef p) {
@@ -588,7 +636,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
             padding: const EdgeInsets.only(right: 16, left: 8),
             child: FilledButton.icon(
               onPressed: () => Navigator.of(context).pop({
-                'standards': selected,
+                'standards': Map<String, String>.from(selected),
                 'variables': vars,
               }),
               icon: const Icon(Icons.check_circle_outline),
@@ -636,11 +684,14 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
                       ),
                     )
                   else ...[
-                    ...selected.map((code) {
-                      final std = available.firstWhere(
-                        (s) => s.code == code,
-                        orElse: () => StandardDef(code: code, name: ''),
-                      );
+                    ...selected.entries.map((entry) {
+                      final std = _findStandardByRef(entry.key, entry.value);
+                      final codeLabel = std?.code ?? entry.value;
+                      final nameLabel = std?.name ?? '';
+                      final paramCount = std?.parameters.length ?? 0;
+                      final paramText = paramCount == 0
+                          ? 'No parameters required.'
+                          : '$paramCount parameter${paramCount == 1 ? '' : 's'} required.';
                       return Container(
                         margin: const EdgeInsets.symmetric(vertical: 8),
                         padding: const EdgeInsets.all(18),
@@ -656,16 +707,14 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '${std.code} — ${std.name}',
+                                    '$codeLabel — $nameLabel',
                                     style: theme.textTheme.titleSmall?.copyWith(
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    std.parameters.isEmpty
-                                        ? 'No parameters required.'
-                                        : '${std.parameters.length} parameter${std.parameters.length == 1 ? '' : 's'} required.',
+                                    paramText,
                                     style: theme.textTheme.bodySmall
                                         ?.copyWith(color: Colors.white70),
                                   ),
@@ -676,7 +725,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
                               icon: const Icon(Icons.delete_outline),
                               tooltip: 'Remove standard',
                               onPressed: () => setState(() {
-                                selected.remove(code);
+                                selected.remove(entry.key);
                                 _pruneVars();
                               }),
                             ),

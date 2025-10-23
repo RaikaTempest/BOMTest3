@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:uuid/uuid.dart';
 import 'package:bom_builder/core/models.dart';
 import 'package:bom_builder/data/local_repo.dart';
 import 'package:bom_builder/data/repo.dart';
@@ -31,6 +32,7 @@ void main() {
   test('saves and reloads a standard', () async {
     final repo = LocalStandardsRepo();
     final std = StandardDef(
+      id: const Uuid().v4(),
       code: 'T1',
       name: 'Test',
       parameters: [],
@@ -38,7 +40,7 @@ void main() {
       dynamicComponents: [],
     );
     await repo.saveStandard(
-      StandardSaveRequest(original: null, updated: std),
+      StandardSaveRequest(id: std.id, original: null, updated: std),
     );
     final list = await repo.listStandards();
     expect(list.length, 1);
@@ -68,23 +70,26 @@ void main() {
     const code = 'CONCURRENT_STD';
 
     final initial = StandardDef(
+      id: const Uuid().v4(),
       code: code,
       name: 'Base',
       parameters: [ParameterDef(key: 'BaseParam', type: ParamType.text)],
     );
 
     final baseResult = await repoA.saveStandard(
-      StandardSaveRequest(original: null, updated: initial),
+      StandardSaveRequest(id: initial.id, original: null, updated: initial),
     );
     expect(baseResult.didSave, isTrue);
 
     final original = baseResult.merged!;
     final updateA = StandardDef(
+      id: original.id,
       code: code,
       name: 'RepoA-update',
       parameters: [ParameterDef(key: 'A', type: ParamType.text)],
     );
     final updateB = StandardDef(
+      id: original.id,
       code: code,
       name: 'RepoB-update',
       parameters: [ParameterDef(key: 'B', type: ParamType.text)],
@@ -92,10 +97,10 @@ void main() {
 
     final results = await Future.wait([
       repoA.saveStandard(
-        StandardSaveRequest(original: original, updated: updateA),
+        StandardSaveRequest(id: original.id, original: original, updated: updateA),
       ),
       repoB.saveStandard(
-        StandardSaveRequest(original: original, updated: updateB),
+        StandardSaveRequest(id: original.id, original: original, updated: updateB),
       ),
     ]);
 
