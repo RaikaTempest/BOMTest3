@@ -86,16 +86,19 @@ class _ProjectScreenState extends State<ProjectScreen> {
       setState(() {
         final rawAssignments = result['assignments'];
         if (rawAssignments is List) {
-          locations[index].assignments = [
-            for (final entry in rawAssignments)
-              if (entry is StandardAssignment)
-                entry.copy()
-              else if (entry is Map)
+          final updated = <StandardAssignment>[];
+          for (final entry in rawAssignments) {
+            if (entry is StandardAssignment) {
+              updated.add(entry.copy());
+            } else if (entry is Map) {
+              updated.add(
                 StandardAssignment.fromJson(
-                    entry.cast<String, dynamic>())
-              else
-                continue,
-          ];
+                  entry.cast<String, dynamic>(),
+                ),
+              );
+            }
+          }
+          locations[index].assignments = updated;
         }
       });
     }
