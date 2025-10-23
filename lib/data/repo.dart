@@ -29,7 +29,7 @@ class StandardSaveRequest {
   final StandardDef? original;
   final StandardDef updated;
 
-  const StandardSaveRequest({
+  StandardSaveRequest({
     required this.id,
     this.original,
     required this.updated,
