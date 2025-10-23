@@ -492,6 +492,9 @@ class LocationStandardsScreen extends StatefulWidget {
 class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
   late List<StandardAssignment> assignments;
   late List<StandardDef> available;
+  final Map<String, dynamic> _sharedVariables = {};
+  final Map<String, int> _parameterUsageCounts = {};
+  final Map<String, TextEditingController> _textControllers = {};
 
   @override
   void initState() {
@@ -499,6 +502,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     assignments = widget.assignments.map((e) => e.copy()).toList();
     available = widget.available;
     _hydrateAssignments();
+    _refreshSharedParameters();
   }
 
   void _hydrateAssignments() {
@@ -506,6 +510,94 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
       final std = _findStandard(assignment);
       if (std != null) {
         _syncAssignment(assignment, std);
+      }
+    }
+  }
+
+  void _refreshSharedParameters() {
+    final previousShared = Map<String, dynamic>.from(_sharedVariables);
+    final usageCounts = <String, int>{};
+    final firstValues = <String, dynamic>{};
+    final Map<StandardAssignment, Set<String>> assignmentKeys = {};
+
+    for (final assignment in assignments) {
+      final keysForAssignment = <String>{};
+      final std = _findStandard(assignment);
+      if (std != null) {
+        for (final param in std.parameters) {
+          keysForAssignment.add(param.key);
+        }
+      } else {
+        keysForAssignment.addAll(assignment.variables.keys);
+      }
+      assignmentKeys[assignment] = keysForAssignment;
+      for (final key in keysForAssignment) {
+        usageCounts[key] = (usageCounts[key] ?? 0) + 1;
+        if (!firstValues.containsKey(key) &&
+            assignment.variables.containsKey(key)) {
+          firstValues[key] = assignment.variables[key];
+        }
+      }
+    }
+
+    final keysToDispose = previousShared.keys
+        .where((key) => !usageCounts.containsKey(key))
+        .toList();
+    final newShared = <String, dynamic>{};
+    for (final key in usageCounts.keys) {
+      if (firstValues.containsKey(key)) {
+        newShared[key] = firstValues[key];
+      } else if (previousShared.containsKey(key)) {
+        newShared[key] = previousShared[key];
+      } else {
+        newShared[key] = null;
+      }
+    }
+
+    setState(() {
+      _parameterUsageCounts
+        ..clear()
+        ..addAll(usageCounts);
+      _sharedVariables
+        ..clear()
+        ..addAll(newShared);
+
+      for (final entry in assignmentKeys.entries) {
+        final assignment = entry.key;
+        final keysForAssignment = entry.value;
+        for (final key in keysForAssignment) {
+          if (!_sharedVariables.containsKey(key)) {
+            assignment.variables.remove(key);
+            continue;
+          }
+          final value = _sharedVariables[key];
+          if (value == null) {
+            assignment.variables.remove(key);
+          } else {
+            assignment.variables[key] = value;
+          }
+        }
+      }
+    });
+
+    for (final key in keysToDispose) {
+      _textControllers.remove(key)?.dispose();
+    }
+
+    for (final entry in _textControllers.entries.toList()) {
+      final key = entry.key;
+      if (!usageCounts.containsKey(key)) {
+        continue;
+      }
+      final controller = entry.value;
+      final value = _sharedVariables[key];
+      final text = value == null ? '' : value.toString();
+      if (controller.text != text) {
+        controller.value = controller.value.copyWith(
+          text: text,
+          selection: TextSelection.collapsed(offset: text.length),
+          composing: TextRange.empty,
+        );
       }
     }
   }
@@ -551,6 +643,79 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     assignment.variables.removeWhere((key, _) => !allowed.contains(key));
   }
 
+  bool _assignmentUsesKey(StandardAssignment assignment, String key) {
+    final std = _findStandard(assignment);
+    if (std != null) {
+      for (final param in std.parameters) {
+        if (param.key == key) {
+          return true;
+        }
+      }
+      return false;
+    }
+    return assignment.variables.containsKey(key);
+  }
+
+  void _setSharedValue(String key, dynamic value, {bool removeValue = false}) {
+    setState(() {
+      _sharedVariables[key] = removeValue ? null : value;
+
+      for (final assignment in assignments) {
+        if (_assignmentUsesKey(assignment, key)) {
+          if (removeValue || value == null) {
+            assignment.variables.remove(key);
+          } else {
+            assignment.variables[key] = value;
+          }
+        }
+      }
+    });
+
+    if (!removeValue) {
+      final controller = _textControllers[key];
+      if (controller != null) {
+        final text = value == null ? '' : value.toString();
+        if (controller.text != text) {
+          controller.value = controller.value.copyWith(
+            text: text,
+            selection: TextSelection.collapsed(offset: text.length),
+            composing: TextRange.empty,
+          );
+        }
+      }
+    }
+  }
+
+  TextEditingController _ensureTextController(String key, String initialValue) {
+    final existing = _textControllers[key];
+    if (existing != null) {
+      return existing;
+    }
+    final controller = TextEditingController(text: initialValue);
+    _textControllers[key] = controller;
+    return controller;
+  }
+
+  String _formatSharedValue(ParameterDef param) {
+    final value = _sharedVariables[param.key];
+    if (value == null) {
+      return 'Not set';
+    }
+    if (value is bool) {
+      return value ? 'Enabled' : 'Disabled';
+    }
+    if (value is num) {
+      if (value is double && value == value.roundToDouble()) {
+        return value.toInt().toString();
+      }
+      return value.toString();
+    }
+    if (value is String && value.isEmpty) {
+      return 'Not set';
+    }
+    return value.toString();
+  }
+
   Future<void> _addStandard() async {
     if (available.isEmpty) return;
     final std = await showDialog<StandardDef>(
@@ -566,6 +731,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
       setState(() {
         assignments.add(assignment);
       });
+      _refreshSharedParameters();
     }
   }
 
@@ -580,12 +746,14 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     setState(() {
       assignments.insert(index + 1, copy);
     });
+    _refreshSharedParameters();
   }
 
   void _removeAssignment(StandardAssignment assignment) {
     setState(() {
       assignments.remove(assignment);
     });
+    _refreshSharedParameters();
   }
 
   Future<void> _manageStandards() async {
@@ -598,66 +766,82 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
       available = list;
       _hydrateAssignments();
     });
+    _refreshSharedParameters();
   }
 
-  Widget _buildParamField(StandardAssignment assignment, ParameterDef p) {
+  Widget _buildParamField(ParameterDef p) {
     final label = p.unit == null ? p.key : '${p.key} (${p.unit})';
+    final currentValue = _sharedVariables[p.key];
     switch (p.type) {
       case ParamType.boolean:
         return SwitchListTile(
-          key: ValueKey('${assignment.instanceId}_${p.key}_bool'),
-          value: (assignment.variables[p.key] as bool?) ?? false,
+          key: ValueKey('${p.key}_bool_shared'),
+          value: (currentValue as bool?) ?? false,
           title: Text(label),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          onChanged: (v) => setState(() {
-            assignment.variables[p.key] = v;
-          }),
+          onChanged: (v) => _setSharedValue(p.key, v),
         );
       case ParamType.enumType:
         return DropdownButtonFormField<String>(
-          key: ValueKey('${assignment.instanceId}_${p.key}_enum'),
+          key: ValueKey('${p.key}_enum_shared'),
           decoration: InputDecoration(labelText: label),
-          value: assignment.variables[p.key] as String?,
+          value: currentValue is String && p.allowedValues.contains(currentValue)
+              ? currentValue
+              : null,
           items: p.allowedValues
               .map((v) => DropdownMenuItem(value: v, child: Text(v)))
               .toList(),
-          onChanged: (v) => setState(() {
+          onChanged: (v) {
             if (v == null) {
-              assignment.variables.remove(p.key);
+              _setSharedValue(p.key, null, removeValue: true);
             } else {
-              assignment.variables[p.key] = v;
+              _setSharedValue(p.key, v);
             }
-          }),
+          },
         );
       case ParamType.number:
-        return TextFormField(
-          key: ValueKey('${assignment.instanceId}_${p.key}_num'),
-          initialValue: assignment.variables[p.key]?.toString() ?? '',
-          decoration: InputDecoration(labelText: label),
-          keyboardType: TextInputType.number,
-          onChanged: (v) => setState(() {
-            final parsed = double.tryParse(v);
-            if (parsed == null) {
-              assignment.variables.remove(p.key);
-            } else {
-              assignment.variables[p.key] = parsed;
-            }
-          }),
-        );
+        {
+          final controller = _ensureTextController(
+            p.key,
+            currentValue == null ? '' : currentValue.toString(),
+          );
+          return TextFormField(
+            key: ValueKey('${p.key}_num_shared'),
+            controller: controller,
+            decoration: InputDecoration(labelText: label),
+            keyboardType: TextInputType.number,
+            onChanged: (v) {
+              final parsed = double.tryParse(v);
+              if (parsed == null) {
+                _setSharedValue(p.key, null, removeValue: true);
+              } else {
+                _setSharedValue(p.key, parsed);
+              }
+            },
+          );
+        }
       case ParamType.text:
       default:
-        return TextFormField(
-          key: ValueKey('${assignment.instanceId}_${p.key}_text'),
-          initialValue: assignment.variables[p.key]?.toString() ?? '',
-          decoration: InputDecoration(labelText: label),
-          onChanged: (v) => setState(() {
-            assignment.variables[p.key] = v;
-          }),
-        );
+        {
+          final controller = _ensureTextController(
+            p.key,
+            currentValue?.toString() ?? '',
+          );
+          return TextFormField(
+            key: ValueKey('${p.key}_text_shared'),
+            controller: controller,
+            decoration: InputDecoration(labelText: label),
+            onChanged: (v) => _setSharedValue(p.key, v),
+          );
+        }
     }
   }
 
-  Widget _buildAssignmentCard(int index, StandardAssignment assignment) {
+  Widget _buildAssignmentCard(
+    int index,
+    StandardAssignment assignment,
+    Set<String> renderedKeys,
+  ) {
     final theme = Theme.of(context);
     final std = _findStandard(assignment);
     final codeLabel = std?.code ??
@@ -737,12 +921,28 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
           ),
           if (hasParams) ...[
             const SizedBox(height: 12),
-            ...params.map(
-              (p) => Padding(
+            for (final p in params)
+              Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
-                child: _buildParamField(assignment, p),
+                child: renderedKeys.add(p.key)
+                    ? _buildParamField(p)
+                    : Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.white.withOpacity(0.02),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.06),
+                          ),
+                        ),
+                        child: Text(
+                          '${p.key} reuses the shared value ${_formatSharedValue(p)} '
+                          'across ${_parameterUsageCounts[p.key] ?? 1} standards.',
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: Colors.white70),
+                        ),
+                      ),
               ),
-            ),
           ],
         ],
       ),
@@ -752,6 +952,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final renderedKeys = <String>{};
     return BomScaffold(
       appBar: AppBar(
         title: const Text('Apply Standards'),
@@ -815,7 +1016,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
                     )
                   else ...[
                     for (var i = 0; i < assignments.length; i++)
-                      _buildAssignmentCard(i, assignments[i]),
+                      _buildAssignmentCard(i, assignments[i], renderedKeys),
                   ],
                   const SizedBox(height: 16),
                   FilledButton.tonalIcon(
@@ -830,5 +1031,13 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _textControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 }
