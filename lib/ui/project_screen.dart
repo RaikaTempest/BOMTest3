@@ -75,20 +75,28 @@ class _ProjectScreenState extends State<ProjectScreen> {
       MaterialPageRoute(
         builder: (_) => LocationStandardsScreen(
           available: allStds,
-          selected: Map<String, String>.from(locations[index].standards),
-          variables: locations[index].variables,
+          assignments: [
+            for (final assignment in locations[index].assignments)
+              assignment.copy(),
+          ],
         ),
       ),
     );
     if (result != null) {
       setState(() {
-        final rawStandards =
-            (result['standards'] as Map).cast<dynamic, dynamic>();
-        locations[index].standards = rawStandards.map(
-          (key, value) => MapEntry(key.toString(), value.toString()),
-        );
-        locations[index].variables =
-            Map<String, dynamic>.from(result['variables'] as Map);
+        final rawAssignments = result['assignments'];
+        if (rawAssignments is List) {
+          locations[index].assignments = [
+            for (final entry in rawAssignments)
+              if (entry is StandardAssignment)
+                entry.copy()
+              else if (entry is Map)
+                StandardAssignment.fromJson(
+                    entry.cast<String, dynamic>())
+              else
+                continue,
+          ];
+        }
       });
     }
   }
@@ -148,7 +156,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
                 separatorBuilder: (_, __) => const SizedBox(height: 20),
                 itemBuilder: (context, index) {
                   final loc = locations[index];
-                  final applied = loc.standards.length;
+                  final applied = loc.assignments.length;
                   return GlassContainer(
                     key: ValueKey(loc),
                     padding: const EdgeInsets.all(24),
@@ -466,13 +474,11 @@ class _StandardSelectionDialogState extends State<_StandardSelectionDialog> {
 
 class LocationStandardsScreen extends StatefulWidget {
   final List<StandardDef> available;
-  final Map<String, String> selected;
-  final Map<String, dynamic> variables;
+  final List<StandardAssignment> assignments;
   const LocationStandardsScreen({
     super.key,
     required this.available,
-    required this.selected,
-    required this.variables,
+    required this.assignments,
   });
 
   @override
@@ -481,12 +487,28 @@ class LocationStandardsScreen extends StatefulWidget {
 }
 
 class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
-  late Map<String, String> selected;
-  late Map<String, dynamic> vars;
+  late List<StandardAssignment> assignments;
   late List<StandardDef> available;
 
-  StandardDef? _findStandardByRef(String id, String code) {
-    final trimmedId = id.trim();
+  @override
+  void initState() {
+    super.initState();
+    assignments = widget.assignments.map((e) => e.copy()).toList();
+    available = widget.available;
+    _hydrateAssignments();
+  }
+
+  void _hydrateAssignments() {
+    for (final assignment in assignments) {
+      final std = _findStandard(assignment);
+      if (std != null) {
+        _syncAssignment(assignment, std);
+      }
+    }
+  }
+
+  StandardDef? _findStandard(StandardAssignment assignment) {
+    final trimmedId = assignment.standardId.trim();
     if (trimmedId.isNotEmpty) {
       for (final std in available) {
         if (std.id == trimmedId) {
@@ -494,78 +516,73 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
         }
       }
     }
-    final trimmedCode = code.trim();
-    if (trimmedCode.isEmpty) {
-      return null;
+    final codeMeta = (assignment.metadata['code'] as String?)?.trim();
+    if (codeMeta != null && codeMeta.isNotEmpty) {
+      for (final std in available) {
+        if (std.code == codeMeta) {
+          return std;
+        }
+      }
     }
-    for (final std in available) {
-      if (std.code == trimmedCode) {
-        return std;
+    if (trimmedId.isNotEmpty) {
+      for (final std in available) {
+        if (std.code == trimmedId) {
+          return std;
+        }
       }
     }
     return null;
   }
 
-  void _hydrateSelectedFromAvailable() {
-    final updated = <String, String>{};
-    for (final entry in selected.entries) {
-      final std = _findStandardByRef(entry.key, entry.value);
-      if (std != null) {
-        updated[std.id] = std.code;
-      } else if (entry.value.isNotEmpty) {
-        updated[entry.key] = entry.value;
-      }
-    }
-    selected
-      ..clear()
-      ..addAll(updated);
+  void _syncAssignment(StandardAssignment assignment, StandardDef std) {
+    assignment.standardId = std.id;
+    assignment.metadata['code'] = std.code;
+    assignment.metadata['name'] = std.name;
+    assignment.metadata.remove('legacy_unresolved');
+    _pruneVariablesFor(assignment, std);
   }
 
-  @override
-  void initState() {
-    super.initState();
-    selected = Map<String, String>.from(widget.selected);
-    vars = Map<String, dynamic>.from(widget.variables);
-    available = widget.available;
-    _hydrateSelectedFromAvailable();
-  }
-
-  List<ParameterDef> _gatherParams() {
-    final map = <String, ParameterDef>{};
-    for (final entry in selected.entries) {
-      final std = _findStandardByRef(entry.key, entry.value);
-      if (std == null) {
-        continue;
-      }
-      for (final p in std.parameters) {
-        map[p.key] = p;
-      }
-    }
-    return map.values.toList();
-  }
-
-  void _pruneVars() {
-    final keys = _gatherParams().map((e) => e.key).toSet();
-    vars.removeWhere((k, _) => !keys.contains(k));
+  void _pruneVariablesFor(StandardAssignment assignment, StandardDef std) {
+    if (assignment.variables.isEmpty) return;
+    final allowed = std.parameters.map((p) => p.key).toSet();
+    assignment.variables.removeWhere((key, _) => !allowed.contains(key));
   }
 
   Future<void> _addStandard() async {
-    final takenIds = selected.keys.toSet();
-    final takenCodes = selected.values.toSet();
-    final choices = available
-        .where((s) => !takenIds.contains(s.id) && !takenCodes.contains(s.code))
-        .toList();
-    if (choices.isEmpty) return;
+    if (available.isEmpty) return;
     final std = await showDialog<StandardDef>(
       context: context,
-      builder: (_) => _StandardSelectionDialog(choices: choices),
+      builder: (_) => _StandardSelectionDialog(choices: available),
     );
     if (std != null) {
+      final assignment = StandardAssignment(
+        standardId: std.id,
+        metadata: {'code': std.code, 'name': std.name},
+      );
+      _syncAssignment(assignment, std);
       setState(() {
-        selected[std.id] = std.code;
-        _pruneVars();
+        assignments.add(assignment);
       });
     }
+  }
+
+  void _duplicateAssignment(StandardAssignment assignment) {
+    final index = assignments.indexOf(assignment);
+    if (index < 0) return;
+    final copy = assignment.copy(regenerateInstanceId: true);
+    final std = _findStandard(copy);
+    if (std != null) {
+      _syncAssignment(copy, std);
+    }
+    setState(() {
+      assignments.insert(index + 1, copy);
+    });
+  }
+
+  void _removeAssignment(StandardAssignment assignment) {
+    setState(() {
+      assignments.remove(assignment);
+    });
   }
 
   Future<void> _manageStandards() async {
@@ -576,53 +593,162 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     final list = await repo.listStandards();
     setState(() {
       available = list;
-      _hydrateSelectedFromAvailable();
+      _hydrateAssignments();
     });
   }
 
-  Widget _buildParamField(ParameterDef p) {
+  Widget _buildParamField(StandardAssignment assignment, ParameterDef p) {
     final label = p.unit == null ? p.key : '${p.key} (${p.unit})';
     switch (p.type) {
       case ParamType.boolean:
         return SwitchListTile(
-          value: (vars[p.key] as bool?) ?? false,
+          key: ValueKey('${assignment.instanceId}_${p.key}_bool'),
+          value: (assignment.variables[p.key] as bool?) ?? false,
           title: Text(label),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          onChanged: (v) => setState(() => vars[p.key] = v),
+          onChanged: (v) => setState(() {
+            assignment.variables[p.key] = v;
+          }),
         );
       case ParamType.enumType:
         return DropdownButtonFormField<String>(
-          key: ValueKey(p.key),
+          key: ValueKey('${assignment.instanceId}_${p.key}_enum'),
           decoration: InputDecoration(labelText: label),
-          value: vars[p.key] as String?,
+          value: assignment.variables[p.key] as String?,
           items: p.allowedValues
               .map((v) => DropdownMenuItem(value: v, child: Text(v)))
               .toList(),
-          onChanged: (v) => setState(() => vars[p.key] = v),
+          onChanged: (v) => setState(() {
+            if (v == null) {
+              assignment.variables.remove(p.key);
+            } else {
+              assignment.variables[p.key] = v;
+            }
+          }),
         );
       case ParamType.number:
         return TextFormField(
-          key: ValueKey(p.key),
-          initialValue: vars[p.key]?.toString() ?? '',
+          key: ValueKey('${assignment.instanceId}_${p.key}_num'),
+          initialValue: assignment.variables[p.key]?.toString() ?? '',
           decoration: InputDecoration(labelText: label),
           keyboardType: TextInputType.number,
-          onChanged: (v) => vars[p.key] = double.tryParse(v),
+          onChanged: (v) => setState(() {
+            final parsed = double.tryParse(v);
+            if (parsed == null) {
+              assignment.variables.remove(p.key);
+            } else {
+              assignment.variables[p.key] = parsed;
+            }
+          }),
         );
       case ParamType.text:
       default:
         return TextFormField(
-          key: ValueKey(p.key),
-          initialValue: vars[p.key]?.toString() ?? '',
+          key: ValueKey('${assignment.instanceId}_${p.key}_text'),
+          initialValue: assignment.variables[p.key]?.toString() ?? '',
           decoration: InputDecoration(labelText: label),
-          onChanged: (v) => vars[p.key] = v,
+          onChanged: (v) => setState(() {
+            assignment.variables[p.key] = v;
+          }),
         );
     }
+  }
+
+  Widget _buildAssignmentCard(int index, StandardAssignment assignment) {
+    final theme = Theme.of(context);
+    final std = _findStandard(assignment);
+    final codeLabel = std?.code ??
+        (assignment.metadata['code'] as String?) ??
+        assignment.standardId;
+    final nameLabel = std?.name ??
+        (assignment.metadata['name'] as String?) ??
+        '';
+    final params = std?.parameters ?? const <ParameterDef>[];
+    final hasParams = params.isNotEmpty;
+    return Container(
+      key: ValueKey(assignment.instanceId),
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: Colors.white.withOpacity(0.03),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${index + 1}. $codeLabel',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (nameLabel.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        nameLabel,
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: Colors.white70),
+                      ),
+                    ],
+                    if (std == null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'This standard is no longer available. Update your library to restore it.',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: Colors.amberAccent),
+                      ),
+                    ] else if (!hasParams) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'No parameters required.',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: Colors.white70),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Column(
+                children: [
+                  IconButton(
+                    tooltip: 'Duplicate standard',
+                    icon: const Icon(Icons.copy_all_outlined),
+                    onPressed: () => _duplicateAssignment(assignment),
+                  ),
+                  IconButton(
+                    tooltip: 'Remove standard',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => _removeAssignment(assignment),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          if (hasParams) ...[
+            const SizedBox(height: 12),
+            ...params.map(
+              (p) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: _buildParamField(assignment, p),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final params = _gatherParams();
     return BomScaffold(
       appBar: AppBar(
         title: const Text('Apply Standards'),
@@ -636,8 +762,9 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
             padding: const EdgeInsets.only(right: 16, left: 8),
             child: FilledButton.icon(
               onPressed: () => Navigator.of(context).pop({
-                'standards': Map<String, String>.from(selected),
-                'variables': vars,
+                'assignments': assignments
+                    .map((assignment) => assignment.copy())
+                    .toList(),
               }),
               icon: const Icon(Icons.check_circle_outline),
               label: const Text('Done'),
@@ -654,13 +781,13 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Selected standards',
+                    'Standards & parameters',
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (selected.isEmpty)
+                  if (assignments.isEmpty)
                     Container(
                       padding: const EdgeInsets.all(18),
                       decoration: BoxDecoration(
@@ -684,55 +811,8 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
                       ),
                     )
                   else ...[
-                    ...selected.entries.map((entry) {
-                      final std = _findStandardByRef(entry.key, entry.value);
-                      final codeLabel = std?.code ?? entry.value;
-                      final nameLabel = std?.name ?? '';
-                      final paramCount = std?.parameters.length ?? 0;
-                      final paramText = paramCount == 0
-                          ? 'No parameters required.'
-                          : '$paramCount parameter${paramCount == 1 ? '' : 's'} required.';
-                      return Container(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          color: Colors.white.withOpacity(0.03),
-                          border: Border.all(color: Colors.white.withOpacity(0.08)),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '$codeLabel — $nameLabel',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    paramText,
-                                    style: theme.textTheme.bodySmall
-                                        ?.copyWith(color: Colors.white70),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline),
-                              tooltip: 'Remove standard',
-                              onPressed: () => setState(() {
-                                selected.remove(entry.key);
-                                _pruneVars();
-                              }),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
+                    for (var i = 0; i < assignments.length; i++)
+                      _buildAssignmentCard(i, assignments[i]),
                   ],
                   const SizedBox(height: 16),
                   FilledButton.tonalIcon(
@@ -743,26 +823,6 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
                 ],
               ),
             ),
-            if (params.isNotEmpty) const SizedBox(height: 24),
-            if (params.isNotEmpty)
-              GlassContainer(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Variable inputs',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    ...params.map((p) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: _buildParamField(p),
-                        )),
-                  ],
-                ),
-              ),
           ],
         ),
       ),

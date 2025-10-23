@@ -23,10 +23,27 @@ void main() {
     );
 
     final locations = [
-      WorkLocation(barcode: 'L1', standards: {std1.id: std1.code}),
+      WorkLocation(
+        barcode: 'L1',
+        assignments: [
+          StandardAssignment(
+            standardId: std1.id,
+            metadata: {'code': std1.code, 'name': std1.name},
+          ),
+        ],
+      ),
       WorkLocation(
         barcode: 'L2',
-        standards: {std1.id: std1.code, std2.id: std2.code},
+        assignments: [
+          StandardAssignment(
+            standardId: std1.id,
+            metadata: {'code': std1.code, 'name': std1.name},
+          ),
+          StandardAssignment(
+            standardId: std2.id,
+            metadata: {'code': std2.code, 'name': std2.name},
+          ),
+        ],
       ),
     ];
 
@@ -65,7 +82,16 @@ void main() {
     final locations = [
       WorkLocation(
         barcode: 'L1',
-        standards: {std1.id: std1.code, std2.id: std2.code},
+        assignments: [
+          StandardAssignment(
+            standardId: std1.id,
+            metadata: {'code': std1.code, 'name': std1.name},
+          ),
+          StandardAssignment(
+            standardId: std2.id,
+            metadata: {'code': std2.code, 'name': std2.name},
+          ),
+        ],
       ),
     ];
 
@@ -147,7 +173,15 @@ void main() {
     );
 
     final locations = [
-      WorkLocation(barcode: 'L-100', standards: {stdPrimary.id: stdPrimary.code}),
+      WorkLocation(
+        barcode: 'L-100',
+        assignments: [
+          StandardAssignment(
+            standardId: stdPrimary.id,
+            metadata: {'code': stdPrimary.code, 'name': stdPrimary.name},
+          ),
+        ],
+      ),
     ];
 
     final exporter = BomExporter();

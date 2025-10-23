@@ -644,66 +644,194 @@ class CacheEntry {
   CacheEntry({required this.standardId, required this.inputs, required this.bom, required this.status, required this.createdAt});
 }
 
+class StandardAssignment {
+  final String instanceId;
+  String standardId;
+  final Map<String, dynamic> metadata;
+  final Map<String, dynamic> variables;
+
+  StandardAssignment({
+    String? instanceId,
+    required this.standardId,
+    Map<String, dynamic>? metadata,
+    Map<String, dynamic>? variables,
+  })  : instanceId = _normalizeInstanceId(instanceId),
+        metadata = metadata == null
+            ? <String, dynamic>{}
+            : Map<String, dynamic>.from(metadata),
+        variables = variables == null
+            ? <String, dynamic>{}
+            : Map<String, dynamic>.from(variables);
+
+  static String _normalizeInstanceId(String? raw) {
+    if (raw == null) return const Uuid().v4();
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return const Uuid().v4();
+    return trimmed;
+  }
+
+  factory StandardAssignment.fromJson(Map<String, dynamic> j) {
+    final metadata = (j['metadata'] as Map?)?.cast<String, dynamic>();
+    final variables = (j['variables'] as Map?)?.cast<String, dynamic>();
+    final rawStandardId = (j['standard_id'] as String?) ?? '';
+    final trimmedStandardId = rawStandardId.trim();
+    var standardId = trimmedStandardId.isEmpty ? '' : trimmedStandardId;
+    if (standardId.isEmpty) {
+      final codeHint = metadata == null
+          ? (j['standard_code'] as String?)
+          : (metadata['code'] as String?);
+      if (codeHint != null && codeHint.trim().isNotEmpty) {
+        standardId = codeHint.trim();
+      }
+    }
+    return StandardAssignment(
+      instanceId: j['instance_id'] as String?,
+      standardId: standardId,
+      metadata: metadata ??
+          {
+            if (j['standard_code'] != null)
+              'code': (j['standard_code'] as String).trim(),
+          },
+      variables: variables,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'instance_id': instanceId,
+        'standard_id': standardId,
+        if (metadata.isNotEmpty) 'metadata': metadata,
+        if (variables.isNotEmpty) 'variables': variables,
+      };
+
+  StandardAssignment copy({bool regenerateInstanceId = false}) => StandardAssignment(
+        instanceId: regenerateInstanceId ? null : instanceId,
+        standardId: standardId,
+        metadata: metadata,
+        variables: variables,
+      );
+}
+
 class WorkLocation {
   String barcode;
-  Map<String, String> standards;
-  Map<String, dynamic> variables;
+  List<StandardAssignment> assignments;
   WorkLocation({
     this.barcode = '',
-    Map<String, String>? standards,
-    Map<String, dynamic>? variables,
-  })  : standards = standards ?? <String, String>{},
-        variables = variables ?? <String, dynamic>{};
+    List<StandardAssignment>? assignments,
+  }) : assignments = assignments ?? <StandardAssignment>[];
 
   factory WorkLocation.fromJson(Map<String, dynamic> j) {
-    final refs = <String, String>{};
-    final rawRefs = j['standard_refs'];
-    if (rawRefs is List) {
-      for (final entry in rawRefs) {
+    final assignments = <StandardAssignment>[];
+    final rawAssignments = j['assignments'];
+    if (rawAssignments is List) {
+      for (final entry in rawAssignments) {
         if (entry is Map) {
-          final rawId = entry['id'] ?? entry['standard_id'];
-          final rawCode = entry['code'] ?? entry['standard_code'];
-          final id = rawId == null ? null : rawId.toString().trim();
-          final code = rawCode == null ? null : rawCode.toString().trim();
-          if (id != null && id.isNotEmpty && code != null && code.isNotEmpty) {
-            refs[id] = code;
+          final assignment =
+              StandardAssignment.fromJson(entry.cast<String, dynamic>());
+          if (assignment.standardId.trim().isNotEmpty) {
+            assignments.add(assignment);
           }
         }
       }
-    } else if (rawRefs is Map) {
-      rawRefs.forEach((key, value) {
-        final id = key.toString().trim();
-        final code = value == null ? null : value.toString().trim();
-        if (id.isNotEmpty && code != null && code.isNotEmpty) {
-          refs[id] = code;
-        }
-      });
     }
-    if (refs.isEmpty) {
-      final legacy = j['standards'];
-      if (legacy is List) {
-        for (final entry in legacy) {
-          final code = entry == null ? null : entry.toString().trim();
-          if (code == null || code.isEmpty) continue;
-          refs.putIfAbsent(code, () => code);
+
+    final legacyVariables =
+        (j['variables'] as Map?)?.cast<String, dynamic>() ?? const {};
+
+    if (assignments.isEmpty) {
+      final refs = <Map<String, String>>[];
+      final rawRefs = j['standard_refs'];
+      if (rawRefs is List) {
+        for (final entry in rawRefs) {
+          if (entry is Map) {
+            final rawId = entry['id'] ?? entry['standard_id'];
+            final rawCode = entry['code'] ?? entry['standard_code'];
+            final id = rawId == null ? null : rawId.toString().trim();
+            final code = rawCode == null ? null : rawCode.toString().trim();
+            if ((id != null && id.isNotEmpty) ||
+                (code != null && code.isNotEmpty)) {
+              refs.add({
+                if (id != null && id.isNotEmpty) 'id': id,
+                if (code != null && code.isNotEmpty) 'code': code!,
+              });
+            }
+          }
+        }
+      } else if (rawRefs is Map) {
+        rawRefs.forEach((key, value) {
+          final id = key.toString().trim();
+          final code = value == null ? null : value.toString().trim();
+          if (id.isEmpty && (code == null || code.isEmpty)) {
+            return;
+          }
+          refs.add({
+            if (id.isNotEmpty) 'id': id,
+            if (code != null && code.isNotEmpty) 'code': code,
+          });
+        });
+      }
+      if (refs.isEmpty) {
+        final legacy = j['standards'];
+        if (legacy is List) {
+          for (final entry in legacy) {
+            final code = entry == null ? null : entry.toString().trim();
+            if (code == null || code.isEmpty) continue;
+            refs.add({'code': code});
+          }
+        }
+      }
+      if (refs.isNotEmpty) {
+        for (final ref in refs) {
+          final id = ref['id'];
+          final code = ref['code'];
+          if ((id == null || id.isEmpty) && (code == null || code.isEmpty)) {
+            continue;
+          }
+          assignments.add(
+            StandardAssignment(
+              standardId: (id == null || id.isEmpty) ? code ?? '' : id,
+              metadata: {
+                if (code != null && code.isNotEmpty) 'code': code,
+                if (id == null || id.isEmpty) 'legacy_unresolved': true,
+              },
+              variables: legacyVariables.isEmpty
+                  ? null
+                  : Map<String, dynamic>.from(legacyVariables),
+            ),
+          );
         }
       }
     }
+
+    if (legacyVariables.isNotEmpty && rawAssignments is List) {
+      for (final assignment in assignments) {
+        if (assignment.variables.isEmpty) {
+          assignment.variables.addAll(Map<String, dynamic>.from(legacyVariables));
+        }
+      }
+    }
+
     return WorkLocation(
       barcode: j['barcode'] as String? ?? '',
-      standards: refs,
-      variables: (j['variables'] as Map?)?.cast<String, dynamic>() ?? {},
+      assignments: assignments,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'barcode': barcode,
-        'standards': standards.values.toList(),
+        'assignments': assignments.map((e) => e.toJson()).toList(),
         'standard_refs': [
-          for (final entry in standards.entries)
-            {'id': entry.key, 'code': entry.value},
+          for (final assignment in assignments)
+            {
+              'id': assignment.standardId,
+              if ((assignment.metadata['code'] as String?)?.isNotEmpty ?? false)
+                'code': (assignment.metadata['code'] as String).trim(),
+            },
         ],
-        'variables': variables,
+        'standards': [
+          for (final assignment in assignments)
+            if ((assignment.metadata['code'] as String?)?.isNotEmpty ?? false)
+              (assignment.metadata['code'] as String).trim(),
+        ],
       };
 }
 

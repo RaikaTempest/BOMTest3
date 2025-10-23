@@ -37,10 +37,13 @@ class BomExporter {
       injectedDynamicNames[std.id] = resolved.injectedNames;
     }
     for (final loc in locations) {
-      for (final entry in loc.standards.entries) {
-        final id = entry.key;
-        final codeHint = entry.value;
-        final base = standardsById[id] ?? standardsByCode[codeHint];
+      for (final assignment in loc.assignments) {
+        final trimmedId = assignment.standardId.trim();
+        final metadataCode =
+            (assignment.metadata['code'] as String?)?.trim() ?? '';
+        final base = standardsById[trimmedId] ??
+            standardsByCode[metadataCode] ??
+            standardsByCode[trimmedId];
         if (base == null) {
           continue;
         }
@@ -51,7 +54,7 @@ class BomExporter {
         }
         final stdWithDeps = standardsWithDependencies[base.id] ?? base;
         final injected = injectedDynamicNames[base.id] ?? const <String>{};
-        final lines = engine.evaluate(stdWithDeps, loc.variables);
+        final lines = engine.evaluate(stdWithDeps, assignment.variables);
         final staticConsumersByDynamic = <String, List<StaticComponent>>{};
         if (base.staticComponents.isNotEmpty && injected.isNotEmpty) {
           for (final component in base.staticComponents) {
