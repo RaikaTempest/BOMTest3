@@ -10,6 +10,81 @@ import 'dynamic_component_rules_screen.dart';
 import 'widgets/dynamic_component_editor.dart';
 import 'widgets/parameter_editor.dart';
 
+ParameterDef _cloneParameterDef(ParameterDef source) => ParameterDef(
+      key: source.key,
+      type: source.type,
+      unit: source.unit,
+      allowedValues: List<String>.from(source.allowedValues),
+      required: source.required,
+    );
+
+StaticComponent _cloneStaticComponent(StaticComponent source) => StaticComponent(
+      mm: source.mm,
+      dynamicMmComponent: source.dynamicMmComponent,
+      qty: source.qty,
+    );
+
+DynamicComponentDef _cloneDynamicComponentDef(DynamicComponentDef source) {
+  return DynamicComponentDef(
+    name: source.name,
+    selectionStrategy: source.selectionStrategy,
+    rules: source.rules
+        .map(
+          (rule) => RuleDef(
+            expr: (jsonDecode(jsonEncode(rule.expr)) as Map).cast<String, dynamic>(),
+            outputs: rule.outputs
+                .map(
+                  (o) => OutputSpec(
+                    mm: o.mm,
+                    qty: o.qty,
+                    qtyFormula: o.qtyFormula,
+                  ),
+                )
+                .toList(),
+            priority: rule.priority,
+          ),
+        )
+        .toList(),
+    matrix: source.matrix == null
+        ? null
+        : ConnectorMatrix.fromJson(
+            (jsonDecode(jsonEncode(source.matrix!.toJson())) as Map)
+                .cast<String, dynamic>(),
+          ),
+    mmPattern: source.mmPattern,
+  );
+}
+
+StandardDef _cloneStandardDef(StandardDef source) => StandardDef(
+      id: source.id,
+      code: source.code,
+      name: source.name,
+      version: source.version,
+      status: source.status,
+      category: source.category,
+      parameters: source.parameters.map(_cloneParameterDef).toList(),
+      staticComponents:
+          source.staticComponents.map(_cloneStaticComponent).toList(),
+      dynamicComponents:
+          source.dynamicComponents.map(_cloneDynamicComponentDef).toList(),
+      applicationId: source.applicationId,
+    );
+
+String _nextDuplicateCode(String code) {
+  if (code.isEmpty) return code;
+  final match = RegExp(r'^(.*?)(_copy(\d+)?)$').firstMatch(code);
+  if (match == null) {
+    return '${code}_copy';
+  }
+  final base = match.group(1)!;
+  final numberGroup = match.group(3);
+  if (numberGroup == null) {
+    return '${base}_copy2';
+  }
+  final parsed = int.tryParse(numberGroup) ?? 1;
+  return '${base}_copy${parsed + 1}';
+}
+
 class StandardsManagerScreen extends StatefulWidget {
   const StandardsManagerScreen({super.key});
 
@@ -57,12 +132,19 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
     setState(() => standards = list);
   }
 
-  Future<void> _openDetail([StandardDef? std]) async {
+  Future<void> _openDetail({StandardDef? standard, bool duplicate = false}) async {
     final repo = this.repo;
     if (repo == null) return;
+    final initial = duplicate && standard != null
+        ? _cloneStandardDef(standard)
+        : standard;
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => _StandardDetailScreen(repo: repo, existing: std),
+        builder: (_) => _StandardDetailScreen(
+          repo: repo,
+          existing: initial,
+          startDuplicated: duplicate,
+        ),
       ),
     );
     if (changed == true) {
@@ -158,9 +240,15 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
+                            icon: const Icon(Icons.copy),
+                            tooltip: 'Duplicate standard',
+                            onPressed: () =>
+                                _openDetail(standard: s, duplicate: true),
+                          ),
+                          IconButton(
                             icon: const Icon(Icons.edit),
                             tooltip: 'Edit standard',
-                            onPressed: () => _openDetail(s),
+                            onPressed: () => _openDetail(standard: s),
                           ),
                           IconButton(
                             icon: const Icon(Icons.delete),
@@ -176,7 +264,7 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _openDetail,
+        onPressed: () => _openDetail(),
         child: const Icon(Icons.add),
       ),
     );
@@ -186,7 +274,12 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
 class _StandardDetailScreen extends StatefulWidget {
   final StandardsRepo repo;
   final StandardDef? existing;
-  const _StandardDetailScreen({required this.repo, this.existing});
+  final bool startDuplicated;
+  const _StandardDetailScreen({
+    required this.repo,
+    this.existing,
+    this.startDuplicated = false,
+  });
 
   @override
   State<_StandardDetailScreen> createState() => _StandardDetailScreenState();
@@ -233,6 +326,48 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       ..addAll(
         List.generate(dynamicComponents.length, (_) => _createDynamicComponentId()),
       );
+  }
+
+  void _updateControllerText(TextEditingController controller, String text) {
+    final value = controller.value;
+    controller.value = value.copyWith(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+      composing: TextRange.empty,
+    );
+  }
+
+  void _applyDuplicateDraft({required bool initializing}) {
+    final currentCode = code.text.trim();
+    final nextCode = currentCode.isEmpty
+        ? currentCode
+        : _nextDuplicateCode(currentCode);
+
+    void apply() {
+      _standardId = const Uuid().v4();
+      _originalStandard = null;
+      if (nextCode != code.text) {
+        _updateControllerText(code, nextCode);
+      }
+      parameters = parameters.map(_cloneParameterDef).toList();
+      _resetParameterIds();
+      staticComponents = staticComponents.map(_cloneStaticComponent).toList();
+      dynamicComponents =
+          dynamicComponents.map(_cloneDynamicComponentDef).toList();
+      _resetDynamicComponentIds();
+      _combineGlobalAndCurrent();
+      _combineGlobalDynamicComponents();
+    }
+
+    if (initializing) {
+      apply();
+    } else {
+      setState(apply);
+    }
+  }
+
+  void _duplicateCurrentForm() {
+    _applyDuplicateDraft(initializing: false);
   }
 
   void _combineGlobalAndCurrent() {
@@ -340,7 +475,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     final selected = await _showParameterSelectionDialog(options);
     if (selected == null) return;
     setState(() {
-      parameters.add(_cloneParameter(selected));
+      parameters.add(_cloneParameterDef(selected));
       _parameterIds.add(_createParameterId());
       _combineGlobalAndCurrent();
     });
@@ -370,7 +505,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       if (key.isEmpty || normalizedExisting.contains(key)) continue;
       final globalParam = _findGlobalParameter(key);
       if (globalParam != null) {
-        paramsToAdd.add(_cloneParameter(globalParam));
+        paramsToAdd.add(_cloneParameterDef(globalParam));
         normalizedExisting.add(key);
       }
     }
@@ -379,7 +514,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         parameters.add(param);
         _parameterIds.add(_createParameterId());
       }
-      dynamicComponents.add(_cloneDynamicComponent(selected));
+      dynamicComponents.add(_cloneDynamicComponentDef(selected));
       _dynamicComponentIds.add(_createDynamicComponentId());
       if (paramsToAdd.isNotEmpty) {
         _combineGlobalAndCurrent();
@@ -568,46 +703,6 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     );
   }
 
-  ParameterDef _cloneParameter(ParameterDef source) => ParameterDef(
-        key: source.key,
-        type: source.type,
-        unit: source.unit,
-        allowedValues: List<String>.from(source.allowedValues),
-        required: source.required,
-      );
-
-  DynamicComponentDef _cloneDynamicComponent(DynamicComponentDef source) {
-    return DynamicComponentDef(
-      name: source.name,
-      selectionStrategy: source.selectionStrategy,
-      rules: source.rules
-          .map(
-            (rule) => RuleDef(
-              expr:
-                  jsonDecode(jsonEncode(rule.expr)) as Map<String, dynamic>,
-              outputs: rule.outputs
-                  .map(
-                    (o) => OutputSpec(
-                      mm: o.mm,
-                      qty: o.qty,
-                      qtyFormula: o.qtyFormula,
-                    ),
-                  )
-                  .toList(),
-              priority: rule.priority,
-            ),
-          )
-          .toList(),
-      matrix: source.matrix == null
-          ? null
-          : ConnectorMatrix.fromJson(
-              (jsonDecode(jsonEncode(source.matrix!.toJson())) as Map)
-                  .cast<String, dynamic>(),
-            ),
-      mmPattern: source.mmPattern,
-    );
-  }
-
   void _onParameterChanged(int index, ParameterDef def) {
     setState(() {
       parameters[index] = def;
@@ -655,14 +750,23 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     code = TextEditingController(text: e?.code ?? '');
     name = TextEditingController(text: e?.name ?? '');
     category = TextEditingController(text: e?.category ?? '');
-    parameters = e?.parameters.toList() ?? [];
+    parameters = e == null
+        ? []
+        : e.parameters.map(_cloneParameterDef).toList();
     _resetParameterIds();
-    staticComponents = e?.staticComponents.toList() ?? [];
-    dynamicComponents = e?.dynamicComponents.toList() ?? [];
+    staticComponents = e == null
+        ? []
+        : e.staticComponents.map(_cloneStaticComponent).toList();
+    dynamicComponents = e == null
+        ? []
+        : e.dynamicComponents.map(_cloneDynamicComponentDef).toList();
     _resetDynamicComponentIds();
     _originalStandard = e;
     _standardId = e?.id ?? const Uuid().v4();
     _combineGlobalDynamicComponents();
+    if (widget.startDuplicated && e != null) {
+      _applyDuplicateDraft(initializing: true);
+    }
     _loadGlobalParameters();
     _loadGlobalDynamicComponents();
   }
@@ -1082,8 +1186,13 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.existing == null ? 'Add Standard' : 'Edit Standard'),
+        title: Text(_originalStandard == null ? 'Add Standard' : 'Edit Standard'),
         actions: [
+          IconButton(
+            onPressed: _duplicateCurrentForm,
+            tooltip: 'Duplicate as new',
+            icon: const Icon(Icons.copy),
+          ),
           TextButton(
             onPressed: _save,
             style: TextButton.styleFrom(
