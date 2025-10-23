@@ -47,13 +47,27 @@ class RuleEngine {
         }
         mm ??= provider != null ? _firstNonEmptyMm(selectRule(provider)) : null;
         if (mm != null) {
-          bom.add(BomLine(mm: mm, qty: sc.qty, source: 'static:$providerName'));
+          bom.add(
+            BomLine(
+              mm: mm,
+              qty: sc.qty,
+              source: 'static:$providerName',
+              label: sc.label,
+            ),
+          );
           continue;
         }
       }
       final literalMm = sc.mm;
       if (literalMm != null) {
-        bom.add(BomLine(mm: literalMm, qty: sc.qty, source: 'static'));
+        bom.add(
+          BomLine(
+            mm: literalMm,
+            qty: sc.qty,
+            source: 'static',
+            label: sc.label,
+          ),
+        );
       }
     }
 

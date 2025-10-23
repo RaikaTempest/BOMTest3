@@ -95,7 +95,12 @@ class _NewJobScreenState extends State<NewJobScreen> {
                 itemCount: bom.length,
                 itemBuilder: (_, i) {
                   final line = bom[i];
+                  final label = line.label?.trim();
+                  final titleText =
+                      (label != null && label.isNotEmpty) ? label : line.mm;
                   final notes = <Widget>[
+                    if (label != null && label.isNotEmpty)
+                      Text(line.mm),
                     Text(line.source),
                   ];
                   if (line.status != 'ok') {
@@ -119,7 +124,7 @@ class _NewJobScreenState extends State<NewJobScreen> {
                   }
                   return ListTile(
                     dense: true,
-                    title: Text('${line.mm}  × ${line.qty}'),
+                    title: Text('$titleText  × ${line.qty}'),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: notes,

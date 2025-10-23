@@ -9,7 +9,9 @@ void main() {
       id: const Uuid().v4(),
       code: 'S1',
       name: 'Std1',
-      staticComponents: [StaticComponent(mm: 'MM1', qty: 1)],
+      staticComponents: [
+        StaticComponent(label: 'Static 1', mm: 'MM1', qty: 1),
+      ],
     );
     final std2 = StandardDef(
       id: const Uuid().v4(),
@@ -66,7 +68,9 @@ void main() {
       id: const Uuid().v4(),
       code: 'S1',
       name: 'Std1',
-      staticComponents: [StaticComponent(mm: 'MM1', qty: 1)],
+      staticComponents: [
+        StaticComponent(label: 'Static 1', mm: 'MM1', qty: 1),
+      ],
     );
     final std2 = StandardDef(
       id: const Uuid().v4(),
@@ -155,7 +159,7 @@ void main() {
       code: 'PRIMARY',
       name: 'Primary',
       staticComponents: [
-        StaticComponent(dynamicMmComponent: 'GlobalConn', qty: 3),
+        StaticComponent(label: 'Borrowed Global', dynamicMmComponent: 'GlobalConn', qty: 3),
       ],
       dynamicComponents: [
         DynamicComponentDef(name: 'LocalDyn', rules: [
