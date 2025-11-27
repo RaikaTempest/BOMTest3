@@ -439,6 +439,5 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
                       ),
       ),
     );
-    );
   }
 }
