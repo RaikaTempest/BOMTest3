@@ -755,15 +755,15 @@ class _DynamicComponentRulesScreenState
             ],
             bottom: const TabBar(
               tabs: [
-                Tab(text: 'Matrix'),
                 Tab(text: 'Rules'),
+                Tab(text: 'Matrix'),
               ],
             ),
           ),
           body: TabBarView(
             children: [
-              _buildMatrixTab(),
               _buildRulesTab(),
+              _buildMatrixTab(),
             ],
           ),
         ),
