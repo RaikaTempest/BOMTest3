@@ -57,6 +57,111 @@ DynamicComponentDef _cloneDynamicComponentDef(DynamicComponentDef source) {
   );
 }
 
+class _AdminAuthResult {
+  final bool success;
+  final bool attempted;
+  const _AdminAuthResult({required this.success, required this.attempted});
+}
+
+Future<_AdminAuthResult?> _showAdminAuthDialog(
+  BuildContext context,
+  String expectedPassword,
+) {
+  return showDialog<_AdminAuthResult>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => _AdminAuthDialog(expectedPassword: expectedPassword),
+  );
+}
+
+class _AdminAuthDialog extends StatefulWidget {
+  final String expectedPassword;
+  const _AdminAuthDialog({required this.expectedPassword});
+
+  @override
+  State<_AdminAuthDialog> createState() => _AdminAuthDialogState();
+}
+
+class _AdminAuthDialogState extends State<_AdminAuthDialog> {
+  late final TextEditingController _controller;
+  bool _invalid = false;
+  bool _attempted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  void _submit() {
+    setState(() {
+      _attempted = true;
+    });
+    if (_controller.text.trim() == widget.expectedPassword) {
+      Navigator.of(context)
+          .pop(const _AdminAuthResult(success: true, attempted: true));
+    } else {
+      setState(() => _invalid = true);
+    }
+  }
+
+  void _cancel() {
+    Navigator.of(context)
+        .pop(_AdminAuthResult(success: false, attempted: _attempted));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: () async {
+        _cancel();
+        return false;
+      },
+      child: AlertDialog(
+        title: const Text('Admin authentication'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Enter the admin password to continue.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: 'Password',
+                errorText: _invalid ? 'Incorrect password' : null,
+              ),
+              autofocus: true,
+              onChanged: (_) {
+                if (_invalid) {
+                  setState(() => _invalid = false);
+                }
+              },
+              onSubmitted: (_) => _submit(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: _cancel,
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: _submit,
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 StandardDef _cloneStandardDef(StandardDef source) => StandardDef(
       id: source.id,
       code: source.code,
@@ -196,87 +301,14 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
 
   Future<bool> _requireAdminAuthentication() async {
     final expected = await AdminCredentialsStore.instance.loadAdminPassword();
-    final controller = TextEditingController();
-    var attempted = false;
-    bool invalid = false;
-    bool? result;
-    try {
-      result = await showDialog<bool>(
-        context: context,
-        barrierDismissible: true,
-        builder: (dialogContext) {
-          return StatefulBuilder(
-            builder: (localContext, setState) {
-              void submit() {
-                attempted = true;
-                if (controller.text.trim() == expected) {
-                  Navigator.of(localContext).pop(true);
-                } else {
-                  setState(() => invalid = true);
-                }
-              }
-
-              return AlertDialog(
-                title: const Text('Admin authentication'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Enter the admin password to continue.'),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: controller,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        errorText: invalid ? 'Incorrect password' : null,
-                      ),
-                      onChanged: (_) => setState(() {
-                        if (invalid) invalid = false;
-                      }),
-                      onSubmitted: (_) => submit(),
-                    ),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(false),
-                    child: const Text('Cancel'),
-                  ),
-                  TextButton(
-                    onPressed: submit,
-                    child: const Text('Continue'),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
-    }
-    if (result == true) return true;
-    if (attempted && mounted) {
+    final result = await _showAdminAuthDialog(context, expected);
+    if (result?.success == true) return true;
+    if (result?.attempted == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Admin authentication failed.')),
       );
     }
     return false;
-  }
-
-  void _handleAuthSubmit(
-    String input,
-    String expected,
-    BuildContext dialogContext,
-    VoidCallback onAttempted,
-    VoidCallback onInvalid,
-  ) {
-    onAttempted();
-    if (input.trim() == expected) {
-      Navigator.of(dialogContext).pop(true);
-    } else {
-      onInvalid();
-    }
   }
 
   String _formatDateShort(DateTime value) {
@@ -493,67 +525,9 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
 
   Future<bool> _requireAdminAuthentication() async {
     final expected = await AdminCredentialsStore.instance.loadAdminPassword();
-    final controller = TextEditingController();
-    var attempted = false;
-    bool invalid = false;
-    bool? result;
-    try {
-      result = await showDialog<bool>(
-        context: context,
-        barrierDismissible: true,
-        builder: (dialogContext) {
-          return StatefulBuilder(
-            builder: (localContext, setState) {
-              void submit() {
-                attempted = true;
-                if (controller.text.trim() == expected) {
-                  Navigator.of(localContext).pop(true);
-                } else {
-                  setState(() => invalid = true);
-                }
-              }
-
-              return AlertDialog(
-                title: const Text('Admin authentication'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Enter the admin password to continue.'),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: controller,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        errorText: invalid ? 'Incorrect password' : null,
-                      ),
-                      onChanged: (_) => setState(() {
-                        if (invalid) invalid = false;
-                      }),
-                      onSubmitted: (_) => submit(),
-                    ),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(false),
-                    child: const Text('Cancel'),
-                  ),
-                  TextButton(
-                    onPressed: submit,
-                    child: const Text('Continue'),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
-    }
-    if (result == true) return true;
-    if (attempted && mounted) {
+    final result = await _showAdminAuthDialog(context, expected);
+    if (result?.success == true) return true;
+    if (result?.attempted == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Admin authentication failed.')),
       );
