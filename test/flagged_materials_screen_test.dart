@@ -26,11 +26,14 @@ class _FakeRepo implements StandardsRepo {
   Future<List<StandardDef>> listStandards() async => throw UnimplementedError();
 
   @override
-  Future<StandardSaveResult> saveStandard(StandardSaveRequest request) async =>
+  Future<StandardSaveResult> saveStandard(StandardSaveRequest request,
+          {String? actor, bool audit = false}) async =>
       throw UnimplementedError();
 
   @override
-  Future<void> deleteStandard(String code) async => throw UnimplementedError();
+  Future<void> deleteStandard(String code,
+          {String? actor, bool audit = false}) async =>
+      throw UnimplementedError();
 
   @override
   Future<List<ParameterDef>> loadGlobalParameters() async => throw UnimplementedError();
@@ -62,7 +65,9 @@ class _FakeRepo implements StandardsRepo {
       throw UnimplementedError();
 
   @override
-  Future<void> approveCache(String key) async => throw UnimplementedError();
+  Future<void> approveCache(String key,
+          {String? actor, bool audit = false}) async =>
+      throw UnimplementedError();
 
   @override
   Future<void> rejectCache(String key) async => throw UnimplementedError();

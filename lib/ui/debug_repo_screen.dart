@@ -82,6 +82,8 @@ class _DebugRepoScreenState extends State<DebugRepoScreen> {
     );
     await repo.saveStandard(
       StandardSaveRequest(id: std.id, updated: std),
+      actor: 'debug_reset',
+      audit: true,
     ); // overwrite
     final list = await repo.listStandards();
     setState(() {
