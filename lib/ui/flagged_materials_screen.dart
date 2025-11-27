@@ -508,6 +508,8 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
     );
   }
 
+}
+
 class _FlaggedMaterialEditor extends StatefulWidget {
   final FlaggedMaterial material;
   final ValueChanged<FlaggedMaterial> onChanged;
