@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
@@ -24,6 +26,7 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
   bool _loading = true;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String _initialStateSignature = '';
 
   String _createMaterialId() => 'flagged_material_${_nextMaterialId++}';
 
@@ -59,6 +62,7 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
         _serverMaterials = List<FlaggedMaterial>.from(list);
         _resetMaterialIds();
         _loading = false;
+        _initialStateSignature = _serializeState();
       });
     } catch (_) {
       if (!mounted) return;
@@ -68,6 +72,7 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
         _serverMaterials = [];
         _resetMaterialIds();
         _loading = false;
+        _initialStateSignature = _serializeState();
       });
     }
   }
@@ -93,6 +98,36 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
     if (_searchController.text.isNotEmpty) {
       _searchController.clear();
     }
+  }
+
+  String _serializeState() => jsonEncode({
+        'materials': [for (final m in materials) m.toJson()],
+      });
+
+  bool get _hasUnsavedChanges => _serializeState() != _initialStateSignature;
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_hasUnsavedChanges) return true;
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text(
+          'You have unsaved flagged material edits. Leave without saving?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    return shouldLeave == true;
   }
 
   Future<void> _save() async {
@@ -171,6 +206,7 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
       setState(() {
         materials = result.merged;
         _resetMaterialIds();
+        _initialStateSignature = _serializeState();
       });
 
       if (result.hasRemoteChanges) {
@@ -338,111 +374,140 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
     final repo = this.repo;
     final theme = Theme.of(context);
     final filteredIndices = _filteredMaterialIndices;
-    return BomScaffold(
-      appBar: AppBar(
-        title: const Text('Flagged Materials'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 24),
-            child: FilledButton.icon(
-              onPressed: repo == null ? null : _save,
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('Save changes'),
-            ),
+    return WillPopScope(
+      onWillPop: _confirmDiscardChanges,
+      child: BomScaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () async {
+              if (await _confirmDiscardChanges()) {
+                if (mounted) {
+                  Navigator.of(context).maybePop();
+                }
+              }
+            },
           ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : repo == null
-              ? const Center(child: Text('Failed to load repository.'))
-              : Column(
-                  children: [
-                    Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          labelText: 'Search flagged materials',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _searchQuery.isEmpty
-                              ? null
-                              : IconButton(
-                                  onPressed: _searchController.clear,
-                                  icon: const Icon(Icons.clear),
-                                ),
+          title: const Text('Flagged Materials'),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 24),
+              child: FilledButton.icon(
+                onPressed: repo == null ? null : _save,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Save changes'),
+              ),
+            ),
+          ],
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : repo == null
+                ? const Center(child: Text('Failed to load repository.'))
+                : Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 24,
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            labelText: 'Search flagged materials',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _searchQuery.isEmpty
+                                ? null
+                                : IconButton(
+                                    onPressed: _searchController.clear,
+                                    icon: const Icon(Icons.clear),
+                                  ),
+                          ),
                         ),
                       ),
-                    ),
-                    Expanded(
-                      child: materials.isEmpty
-                          ? Center(
-                              child: GlassContainer(
-                                margin:
-                                    const EdgeInsets.symmetric(horizontal: 24),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.flag_outlined,
-                                      size: 46,
-                                      color: theme.colorScheme.secondary,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      'No flagged materials yet',
-                                      style: theme.textTheme.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.w700,
+                      Expanded(
+                        child: materials.isEmpty
+                            ? Center(
+                                child: GlassContainer(
+                                  margin: const EdgeInsets.symmetric(horizontal: 24),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.flag_outlined,
+                                        size: 46,
+                                        color: theme.colorScheme.secondary,
                                       ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Track materials that should be avoided and specify approved alternatives when available.',
-                                      textAlign: TextAlign.center,
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(color: Colors.white70),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            )
-                          : filteredIndices.isEmpty
-                              ? const Center(
-                                  child: Text(
-                                    'No flagged materials match your search.',
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'No flagged materials yet',
+                                        style: theme.textTheme.titleLarge?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Track materials that should be avoided and specify approved alternatives when available.',
+                                        textAlign: TextAlign.center,
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                          color: Colors.white70,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                )
-                              : ListView.builder(
-                                  padding: const EdgeInsets.fromLTRB(
-                                      24, 0, 24, 120),
-                                  itemCount: filteredIndices.length,
-                                  itemBuilder: (context, displayIndex) {
-                                    final index =
-                                        filteredIndices[displayIndex];
-                                    return GlassContainer(
-                                      key: ValueKey(_materialIds[index]),
-                                      margin:
-                                          const EdgeInsets.symmetric(vertical: 12),
-                                      child: _FlaggedMaterialEditor(
-                                        material: materials[index],
-                                        onChanged: (m) =>
-                                            _onMaterialChanged(index, m),
-                                        onDelete: () => _removeMaterial(index),
-                                      ),
-                                    );
-                                  },
                                 ),
-                    ),
-                  ],
-                ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: repo == null ? null : _addMaterial,
-        icon: const Icon(Icons.add),
-        label: const Text('Add material'),
+                              )
+                            : filteredIndices.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                      'No flagged materials match your search.',
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 120),
+                                    itemCount: filteredIndices.length,
+                                    itemBuilder: (context, displayIndex) {
+                                      final index = filteredIndices[displayIndex];
+                                      return GlassContainer(
+                                        key: ValueKey(_materialIds[index]),
+                                        margin: const EdgeInsets.symmetric(vertical: 12),
+                                        child: _FlaggedMaterialEditor(
+                                          material: materials[index],
+                                          onChanged: (m) => _onMaterialChanged(index, m),
+                                          onDelete: () => _removeMaterial(index),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 24, bottom: 32, right: 24),
+                        child: Row(
+                          children: [
+                            FilledButton.icon(
+                              onPressed: repo == null ? null : _addMaterial,
+                              icon: const Icon(Icons.add),
+                              label: const Text('Add flagged material'),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Total: ${materials.length}',
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: repo == null ? null : _addMaterial,
+          icon: const Icon(Icons.add),
+          label: const Text('Add material'),
+        ),
       ),
     );
   }
+
 }
 
 class _FlaggedMaterialEditor extends StatefulWidget {

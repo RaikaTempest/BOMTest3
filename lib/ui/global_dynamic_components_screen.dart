@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
@@ -25,6 +27,7 @@ class _GlobalDynamicComponentsScreenState
   String _searchQuery = '';
   List<DynamicComponentDef> _originalComponents = [];
   List<ParameterDef> _originalParameters = [];
+  String _initialStateSignature = '';
 
   String _createComponentId() => 'global_dynamic_${_nextComponentId++}';
 
@@ -57,6 +60,7 @@ class _GlobalDynamicComponentsScreenState
         _originalParameters = List<ParameterDef>.from(loadedParameters);
         _resetIds();
         _loading = false;
+        _initialStateSignature = _serializeState();
       });
     } catch (_) {
       if (!mounted) return;
@@ -68,6 +72,7 @@ class _GlobalDynamicComponentsScreenState
         _originalParameters = [];
         _resetIds();
         _loading = false;
+        _initialStateSignature = _serializeState();
       });
     }
   }
@@ -133,6 +138,37 @@ class _GlobalDynamicComponentsScreenState
       components.add(DynamicComponentDef(name: '', rules: []));
       _componentIds.add(_createComponentId());
     });
+  }
+
+  String _serializeState() => jsonEncode({
+        'components': [for (final c in components) c.toJson()],
+        'parameters': [for (final p in parameters) p.toJson()],
+      });
+
+  bool get _hasUnsavedChanges => _serializeState() != _initialStateSignature;
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_hasUnsavedChanges) return true;
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text(
+          'You have unsaved global dynamic component changes. Leave without saving?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    return shouldLeave == true;
   }
 
   Future<void> _save() async {
@@ -234,6 +270,7 @@ class _GlobalDynamicComponentsScreenState
         _originalParameters = List<ParameterDef>.from(parameterResult.merged);
         _resetIds();
         _normalizeParameters();
+        _initialStateSignature = _serializeState();
       });
 
       if (componentResult.hasRemoteChanges) {
@@ -459,29 +496,41 @@ class _GlobalDynamicComponentsScreenState
               : entry.value.name.toLowerCase().contains(query),
         )
         .toList();
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Global Dynamic Components'),
-        actions: [
-          TextButton(
-            onPressed: repo == null ? null : _save,
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white,
-              backgroundColor: Theme.of(context).colorScheme.secondary,
-            ),
-            child: const Text('Save'),
+    return WillPopScope(
+      onWillPop: _confirmDiscardChanges,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () async {
+              if (await _confirmDiscardChanges()) {
+                if (mounted) {
+                  Navigator.of(context).maybePop();
+                }
+              }
+            },
           ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : repo == null
-              ? const Center(child: Text('Failed to load repository.'))
-              : components.isEmpty
-                  ? const Center(
-                      child: Text('No dynamic components defined yet.'),
-                    )
-                  : Padding(
+          title: const Text('Global Dynamic Components'),
+          actions: [
+            TextButton(
+              onPressed: repo == null ? null : _save,
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).colorScheme.secondary,
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : repo == null
+                ? const Center(child: Text('Failed to load repository.'))
+                : components.isEmpty
+                    ? const Center(
+                        child: Text('No dynamic components defined yet.'),
+                      )
+                    : Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     children: [
@@ -526,9 +575,10 @@ class _GlobalDynamicComponentsScreenState
                     ],
                   ),
                 ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: repo == null ? null : _addComponent,
-        child: const Icon(Icons.add),
+        floatingActionButton: FloatingActionButton(
+          onPressed: repo == null ? null : _addComponent,
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }

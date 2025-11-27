@@ -30,6 +30,7 @@ class ProjectScreen extends StatefulWidget {
 class _ProjectScreenState extends State<ProjectScreen> {
   late List<WorkLocation> locations;
   String? _name;
+  String _initialStateSignature = '';
 
   @override
   void initState() {
@@ -37,6 +38,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
     locations = widget.loaded ??
         List.generate(widget.initialCount, (_) => WorkLocation());
     _name = widget.name;
+    _initialStateSignature = _serializeState();
   }
 
   Future<void> _addLocation() async {
@@ -107,26 +109,38 @@ class _ProjectScreenState extends State<ProjectScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return BomScaffold(
-      appBar: AppBar(
-        title: Text(_name ?? 'Project workspace'),
-        actions: [
-          IconButton(
-            tooltip: 'Export CSV',
-            icon: const Icon(Icons.download_outlined),
-            onPressed: _exportCsv,
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: BomScaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () async {
+              if (await _confirmDiscardChanges()) {
+                if (mounted) {
+                  Navigator.of(context).maybePop();
+                }
+              }
+            },
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16, left: 8),
-            child: FilledButton.icon(
-              onPressed: _saveProject,
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('Save project'),
+          title: Text(_name ?? 'Project workspace'),
+          actions: [
+            IconButton(
+              tooltip: 'Export CSV',
+              icon: const Icon(Icons.download_outlined),
+              onPressed: _exportCsv,
             ),
-          ),
-        ],
-      ),
-      body: Padding(
+            Padding(
+              padding: const EdgeInsets.only(right: 16, left: 8),
+              child: FilledButton.icon(
+                onPressed: _saveProject,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Save project'),
+              ),
+            ),
+          ],
+        ),
+        body: Padding(
         padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
         child: locations.isEmpty
             ? Center(
@@ -240,13 +254,47 @@ class _ProjectScreenState extends State<ProjectScreen> {
                   );
                 },
               ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addLocation,
-        icon: const Icon(Icons.add_location_alt_outlined),
-        label: const Text('Add work location'),
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _addLocation,
+          icon: const Icon(Icons.add_location_alt_outlined),
+          label: const Text('Add work location'),
+        ),
       ),
     );
+  }
+
+  Future<bool> _onWillPop() => _confirmDiscardChanges();
+
+  String _serializeState() => jsonEncode({
+        'name': _name ?? '',
+        'locations': [for (final loc in locations) loc.toJson()],
+      });
+
+  bool get _hasUnsavedChanges => _serializeState() != _initialStateSignature;
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_hasUnsavedChanges) return true;
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Discard project changes?'),
+        content: const Text(
+          'Leaving this page will discard any unsaved project details.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    return shouldLeave == true;
   }
 
   Future<void> _exportCsv() async {
@@ -346,7 +394,9 @@ class _ProjectScreenState extends State<ProjectScreen> {
         const SnackBar(content: Text('Project saved')),
       );
     }
-    setState(() {});
+    setState(() {
+      _initialStateSignature = _serializeState();
+    });
   }
 }
 
@@ -495,6 +545,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
   final Map<String, dynamic> _sharedVariables = {};
   final Map<String, int> _parameterUsageCounts = {};
   final Map<String, TextEditingController> _textControllers = {};
+  String _initialStateSignature = '';
 
   @override
   void initState() {
@@ -503,6 +554,11 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     available = widget.available;
     _hydrateAssignments();
     _refreshSharedParameters();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _initialStateSignature = _serializeState();
+      }
+    });
   }
 
   void _hydrateAssignments() {
@@ -662,6 +718,37 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
       return value.toInt().toString();
     }
     return value.toString();
+  }
+
+  String _serializeState() => jsonEncode({
+        'assignments': [for (final assignment in assignments) assignment.toJson()],
+        'shared': Map<String, dynamic>.from(_sharedVariables),
+      });
+
+  bool get _hasUnsavedChanges => _serializeState() != _initialStateSignature;
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_hasUnsavedChanges) return true;
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text(
+          'Leaving will discard any updates to this location\'s standards.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    return shouldLeave == true;
   }
 
   void _setSharedValue(String key, dynamic value, {bool removeValue = false}) {
@@ -961,30 +1048,42 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final renderedKeys = <String>{};
-    return BomScaffold(
-      appBar: AppBar(
-        title: const Text('Apply Standards'),
-        actions: [
-          IconButton(
-            tooltip: 'Open standards manager',
-            icon: const Icon(Icons.library_add_outlined),
-            onPressed: _manageStandards,
+    return WillPopScope(
+      onWillPop: _confirmDiscardChanges,
+      child: BomScaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () async {
+              if (await _confirmDiscardChanges()) {
+                if (mounted) {
+                  Navigator.of(context).maybePop();
+                }
+              }
+            },
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16, left: 8),
-            child: FilledButton.icon(
-              onPressed: () => Navigator.of(context).pop({
-                'assignments': assignments
-                    .map((assignment) => assignment.copy())
-                    .toList(),
-              }),
-              icon: const Icon(Icons.check_circle_outline),
-              label: const Text('Done'),
+          title: const Text('Apply Standards'),
+          actions: [
+            IconButton(
+              tooltip: 'Open standards manager',
+              icon: const Icon(Icons.library_add_outlined),
+              onPressed: _manageStandards,
             ),
-          ),
-        ],
-      ),
-      body: Padding(
+            Padding(
+              padding: const EdgeInsets.only(right: 16, left: 8),
+              child: FilledButton.icon(
+                onPressed: () => Navigator.of(context).pop({
+                  'assignments': assignments
+                      .map((assignment) => assignment.copy())
+                      .toList(),
+                }),
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('Done'),
+              ),
+            ),
+          ],
+        ),
+        body: Padding(
         padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
         child: ListView(
           children: [
@@ -1036,6 +1135,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );
