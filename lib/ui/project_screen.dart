@@ -729,8 +729,13 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
 
   String _valueToControllerText(dynamic value) {
     if (value == null) return '';
-    if (value is num && value is double && value == value.roundToDouble()) {
-      return value.toInt().toString();
+    if (value is num) {
+      if (value is int) {
+        return value.toDouble().toStringAsFixed(1);
+      }
+      if (value is double && value == value.roundToDouble()) {
+        return value.toStringAsFixed(1);
+      }
     }
     return value.toString();
   }
@@ -766,7 +771,12 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     return shouldLeave == true;
   }
 
-  void _setSharedValue(String key, dynamic value, {bool removeValue = false}) {
+  void _setSharedValue(
+    String key,
+    dynamic value, {
+    bool removeValue = false,
+    bool syncController = true,
+  }) {
     setState(() {
       _sharedVariables[key] = removeValue ? null : value;
 
@@ -781,7 +791,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
       }
     });
 
-    if (!removeValue) {
+    if (!removeValue && syncController) {
       final controller = _textControllers[key];
       if (controller != null) {
         final text = _valueToControllerText(value);
@@ -945,9 +955,18 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
             onChanged: (v) {
               final parsed = double.tryParse(v);
               if (parsed == null) {
-                _setSharedValue(p.key, null, removeValue: true);
+                _setSharedValue(
+                  p.key,
+                  null,
+                  removeValue: true,
+                  syncController: false,
+                );
               } else {
-                _setSharedValue(p.key, parsed);
+                _setSharedValue(
+                  p.key,
+                  parsed,
+                  syncController: false,
+                );
               }
             },
           );
