@@ -656,6 +656,14 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     return assignment.variables.containsKey(key);
   }
 
+  String _valueToControllerText(dynamic value) {
+    if (value == null) return '';
+    if (value is num && value is double && value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
+    return value.toString();
+  }
+
   void _setSharedValue(String key, dynamic value, {bool removeValue = false}) {
     setState(() {
       _sharedVariables[key] = removeValue ? null : value;
@@ -674,7 +682,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     if (!removeValue) {
       final controller = _textControllers[key];
       if (controller != null) {
-        final text = value == null ? '' : value.toString();
+        final text = _valueToControllerText(value);
         if (controller.text != text) {
           controller.value = controller.value.copyWith(
             text: text,
