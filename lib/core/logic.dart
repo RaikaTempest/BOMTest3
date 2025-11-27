@@ -79,6 +79,38 @@ class JsonLogic {
         return false;
       }
 
+      case 'xor': {
+        final list = (val is List) ? val : const [];
+        var truthyCount = 0;
+        for (final e in list) {
+          final r = (e is Map) ? apply(Map<String, dynamic>.from(e), ctx) : e;
+          if (_asBool(r)) {
+            truthyCount++;
+            if (truthyCount > 1) return false;
+          }
+        }
+        return truthyCount == 1;
+      }
+
+      case 'nor': {
+        final list = (val is List) ? val : const [];
+        for (final e in list) {
+          final r = (e is Map) ? apply(Map<String, dynamic>.from(e), ctx) : e;
+          if (_asBool(r)) return false;
+        }
+        return true;
+      }
+
+      case 'nand': {
+        final list = (val is List) ? val : const [];
+        if (list.isEmpty) return false;
+        for (final e in list) {
+          final r = (e is Map) ? apply(Map<String, dynamic>.from(e), ctx) : e;
+          if (!_asBool(r)) return true;
+        }
+        return false;
+      }
+
       case '==': {
         final a = _eval(val[0], ctx);
         final b = _eval(val[1], ctx);
