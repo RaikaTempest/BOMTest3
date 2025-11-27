@@ -69,6 +69,9 @@ class _DebugRepoScreenState extends State<DebugRepoScreen> {
       id: const Uuid().v4(),
       code: 'FS12',
       name: 'Framing Standard 12',
+      approved: true,
+      approvedBy: 'System seed',
+      approvedAt: DateTime.now(),
       parameters: [ParameterDef(key: 'PoleHeight', type: ParamType.number)],
       staticComponents: [
         StaticComponent(label: 'Brace', mm: 'MM#BRACE-STD', qty: 2),
