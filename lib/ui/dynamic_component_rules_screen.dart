@@ -1016,7 +1016,57 @@ class _DynamicComponentRulesScreenState
   }
 
   String _exprSummary(Map<String, dynamic> expr) {
+    if (expr.isEmpty) return 'Always';
+
+    String? _conditionSummary(Map<String, dynamic> condition) {
+      if (condition.isEmpty) return null;
+      final op = condition.keys.first;
+      final args = condition[op];
+      if (args is List && args.length >= 2) {
+        final first = args.first;
+        final second = args[1];
+        if (first is Map && first['var'] is String) {
+          final param = first['var'] as String;
+          final value = second;
+          return '$param $op ${_formatValue(value)}';
+        }
+      }
+      return null;
+    }
+
+    final op = expr.keys.first;
+    final val = expr[op];
+
+    if (val is List) {
+      const supportedGroupOps = {'and', 'or', 'xor', 'nor', 'nand'};
+      if (supportedGroupOps.contains(op)) {
+        final parts = <String>[];
+        for (final entry in val) {
+          if (entry is Map<String, dynamic>) {
+            parts.add(_exprSummary(entry));
+          } else if (entry is Map) {
+            parts.add(_exprSummary(entry.cast<String, dynamic>()));
+          }
+        }
+        parts.removeWhere((element) => element.isEmpty);
+        if (parts.isNotEmpty) {
+          final joiner = ' ${op.toUpperCase()} ';
+          return parts.length == 1 ? parts.first : parts.join(joiner);
+        }
+      }
+
+      final condition = _conditionSummary(expr);
+      if (condition != null) {
+        return condition;
+      }
+    }
+
     return jsonEncode(expr);
+  }
+
+  String _formatValue(dynamic value) {
+    if (value is bool) return value ? 'true' : 'false';
+    return '$value';
   }
 
   String _outputsSummary(List<OutputSpec> outputs) {

@@ -415,8 +415,6 @@ class _RuleWizardState extends State<RuleWizard> {
 
   void _loadExpr(Map<String, dynamic> expr) {
     _conditions.clear();
-    _groupOperator = 'and';
-    _unsupportedOperator = null;
     if (expr.isEmpty) return;
 
     Map<String, dynamic> m = expr;
