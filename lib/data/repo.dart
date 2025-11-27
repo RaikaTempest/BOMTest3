@@ -2,8 +2,9 @@ import '../core/models.dart';
 
 abstract class StandardsRepo {
   Future<List<StandardDef>> listStandards();
-  Future<StandardSaveResult> saveStandard(StandardSaveRequest request);
-  Future<void> deleteStandard(String code);
+  Future<StandardSaveResult> saveStandard(StandardSaveRequest request,
+      {String? actor, bool audit = false});
+  Future<void> deleteStandard(String code, {String? actor, bool audit = false});
 
   Future<List<ParameterDef>> loadGlobalParameters();
   Future<ParametersSaveResult> saveGlobalParameters(
@@ -20,7 +21,7 @@ abstract class StandardsRepo {
   Future<CacheSaveResult> saveCacheEntry(CacheSaveRequest request);
   Future<Map<String, dynamic>?> getCacheEntry(String key);
   Future<Map<String, Map<String, dynamic>>> listPendingCache();
-  Future<void> approveCache(String key);
+  Future<void> approveCache(String key, {String? actor, bool audit = false});
   Future<void> rejectCache(String key);
 }
 

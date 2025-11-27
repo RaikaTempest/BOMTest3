@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/models.dart';
+import '../data/actor_store.dart';
 import '../data/admin_credentials_store.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
@@ -266,6 +267,63 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
     }
   }
 
+  Future<String?> _promptForActor() async {
+    final controller =
+        TextEditingController(text: ActorStore.instance.lastActor ?? '');
+    final actor = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        var invalid = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Who is performing this action?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: 'Actor',
+                    errorText: invalid ? 'Actor is required' : null,
+                  ),
+                  onSubmitted: (value) => Navigator.of(context).pop(value),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (controller.text.trim().isEmpty) {
+                    setDialogState(() => invalid = true);
+                    return;
+                  }
+                  Navigator.of(context).pop(controller.text);
+                },
+                child: const Text('Continue'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (actor == null) return null;
+    final normalized = actor.trim();
+    if (normalized.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter an actor to continue.')),
+      );
+      return null;
+    }
+    ActorStore.instance.remember(normalized);
+    return normalized;
+  }
+
   Future<void> _confirmDelete(StandardDef std) async {
     final authenticated = await _requireAdminAuthentication();
     if (!authenticated) return;
@@ -291,7 +349,9 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
       ),
     );
     if (confirm == true) {
-      await repo.deleteStandard(std.code);
+      final actor = await _promptForActor();
+      if (actor == null) return;
+      await repo.deleteStandard(std.code, actor: actor, audit: true);
       if (!mounted) return;
       setState(() {
         standards.removeWhere((s) => s.code == std.code);
@@ -447,6 +507,7 @@ class _StandardDetailScreen extends StatefulWidget {
 }
 
 class _StandardDetailScreenState extends State<_StandardDetailScreen> {
+  late final TextEditingController actor;
   late final TextEditingController code;
   late final TextEditingController name;
   late final TextEditingController category;
@@ -1027,6 +1088,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   void initState() {
     super.initState();
     final e = widget.existing;
+    actor = TextEditingController(text: ActorStore.instance.lastActor ?? '');
     code = TextEditingController(text: e?.code ?? '');
     name = TextEditingController(text: e?.name ?? '');
     category = TextEditingController(text: e?.category ?? '');
@@ -1056,6 +1118,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
 
   @override
   void dispose() {
+    actor.dispose();
     code.dispose();
     name.dispose();
     category.dispose();
@@ -1063,8 +1126,22 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     super.dispose();
   }
 
+  String? _requireActor() {
+    final normalized = actor.text.trim();
+    if (normalized.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter who is making this change.')),
+      );
+      return null;
+    }
+    ActorStore.instance.remember(normalized);
+    return normalized;
+  }
+
   Future<void> _save() async {
     try {
+      final actorName = _requireActor();
+      if (actorName == null) return;
       final cleaned = <ParameterDef>[];
       final seenKeys = <String>{};
       for (final p in parameters) {
@@ -1225,6 +1302,8 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
           original: _originalStandard,
           updated: std,
         ),
+        actor: actorName,
+        audit: true,
       );
 
       if (standardResult.hasConflicts) {
@@ -1517,6 +1596,14 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         padding: const EdgeInsets.all(12),
         child: ListView(
           children: [
+            TextField(
+              controller: actor,
+              decoration: const InputDecoration(
+                labelText: 'Actor (who is editing)',
+                helperText: 'Recorded for audit trails.',
+              ),
+            ),
+            const SizedBox(height: 8),
             TextField(
               controller: code,
               decoration: const InputDecoration(labelText: 'Code'),
