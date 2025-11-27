@@ -528,6 +528,9 @@ class StandardDef {
   final String version;
   final String status; // draft/published/deprecated
   final String category;
+  final bool approved;
+  final String? approvedBy;
+  final DateTime? approvedAt;
   final List<ParameterDef> parameters;
   final List<StaticComponent> staticComponents;
   final List<DynamicComponentDef> dynamicComponents;
@@ -540,6 +543,9 @@ class StandardDef {
     this.version = '1.0.0',
     this.status = 'draft',
     String? category,
+    this.approved = false,
+    this.approvedBy,
+    this.approvedAt,
     this.parameters = const [],
     this.staticComponents = const [],
     this.dynamicComponents = const [],
@@ -556,6 +562,11 @@ class StandardDef {
       version: j['version'] as String? ?? '1.0.0',
       status: j['status'] as String? ?? 'draft',
       category: j['category'] as String?,
+      approved: j['approved'] as bool? ?? false,
+      approvedBy: j['approved_by'] as String?,
+      approvedAt: j['approved_at'] != null
+          ? DateTime.tryParse(j['approved_at'] as String)
+          : null,
       parameters: (j['parameters'] as List?)
               ?.map((e) => ParameterDef.fromJson((e as Map).cast<String, dynamic>()))
               .toList() ??
@@ -579,6 +590,9 @@ class StandardDef {
         'version': version,
         'status': status,
         'category': category,
+        'approved': approved,
+        if (approvedBy != null) 'approved_by': approvedBy,
+        if (approvedAt != null) 'approved_at': approvedAt!.toUtc().toIso8601String(),
         'parameters': parameters.map((e) => e.toJson()).toList(),
         'static_components': staticComponents.map((e) => e.toJson()).toList(),
         'dynamic_components': dynamicComponents.map((e) => e.toJson()).toList(),

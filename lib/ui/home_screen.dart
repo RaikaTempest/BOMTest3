@@ -161,6 +161,9 @@ class _JobTabState extends State<_JobTab> {
         id: const Uuid().v4(),
         code: 'FS12',
         name: 'Framing Standard 12',
+        approved: true,
+        approvedBy: 'System seed',
+        approvedAt: DateTime.now(),
         parameters: [ParameterDef(key: 'PoleHeight', type: ParamType.number)],
         staticComponents: [
           StaticComponent(label: 'Brace', mm: 'MM#BRACE-STD', qty: 2),
@@ -396,6 +399,20 @@ class _JobTabState extends State<_JobTab> {
                                                   fontWeight: FontWeight.w600,
                                                 ),
                                               ),
+                                              if (!std.approved) ...[
+                                                const SizedBox(height: 6),
+                                                Chip(
+                                                  backgroundColor:
+                                                      Colors.amber.withOpacity(0.2),
+                                                  label: Text(
+                                                    'Unapproved',
+                                                    style: TextStyle(
+                                                      color: Colors.amber.shade900,
+                                                      fontWeight: FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                               const SizedBox(height: 6),
                                               Text(
                                                 details.isEmpty

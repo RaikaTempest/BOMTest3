@@ -57,6 +57,111 @@ DynamicComponentDef _cloneDynamicComponentDef(DynamicComponentDef source) {
   );
 }
 
+class _AdminAuthResult {
+  final bool success;
+  final bool attempted;
+  const _AdminAuthResult({required this.success, required this.attempted});
+}
+
+Future<_AdminAuthResult?> _showAdminAuthDialog(
+  BuildContext context,
+  String expectedPassword,
+) {
+  return showDialog<_AdminAuthResult>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => _AdminAuthDialog(expectedPassword: expectedPassword),
+  );
+}
+
+class _AdminAuthDialog extends StatefulWidget {
+  final String expectedPassword;
+  const _AdminAuthDialog({required this.expectedPassword});
+
+  @override
+  State<_AdminAuthDialog> createState() => _AdminAuthDialogState();
+}
+
+class _AdminAuthDialogState extends State<_AdminAuthDialog> {
+  late final TextEditingController _controller;
+  bool _invalid = false;
+  bool _attempted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  void _submit() {
+    setState(() {
+      _attempted = true;
+    });
+    if (_controller.text.trim() == widget.expectedPassword) {
+      Navigator.of(context)
+          .pop(const _AdminAuthResult(success: true, attempted: true));
+    } else {
+      setState(() => _invalid = true);
+    }
+  }
+
+  void _cancel() {
+    Navigator.of(context)
+        .pop(_AdminAuthResult(success: false, attempted: _attempted));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: () async {
+        _cancel();
+        return false;
+      },
+      child: AlertDialog(
+        title: const Text('Admin authentication'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Enter the admin password to continue.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: 'Password',
+                errorText: _invalid ? 'Incorrect password' : null,
+              ),
+              autofocus: true,
+              onChanged: (_) {
+                if (_invalid) {
+                  setState(() => _invalid = false);
+                }
+              },
+              onSubmitted: (_) => _submit(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: _cancel,
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: _submit,
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 StandardDef _cloneStandardDef(StandardDef source) => StandardDef(
       id: source.id,
       code: source.code,
@@ -64,6 +169,9 @@ StandardDef _cloneStandardDef(StandardDef source) => StandardDef(
       version: source.version,
       status: source.status,
       category: source.category,
+      approved: source.approved,
+      approvedBy: source.approvedBy,
+      approvedAt: source.approvedAt,
       parameters: source.parameters.map(_cloneParameterDef).toList(),
       staticComponents:
           source.staticComponents.map(_cloneStaticComponent).toList(),
@@ -193,63 +301,9 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
 
   Future<bool> _requireAdminAuthentication() async {
     final expected = await AdminCredentialsStore.instance.loadAdminPassword();
-    final controller = TextEditingController();
-    var attempted = false;
-    final result = await showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        bool invalid = false;
-        return StatefulBuilder(
-          builder: (context, setState) => AlertDialog(
-            title: const Text('Admin authentication'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Enter the admin password to continue.'),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    errorText: invalid ? 'Incorrect password' : null,
-                  ),
-                  onChanged: (_) => setState(() {
-                    if (invalid) invalid = false;
-                  }),
-                  onSubmitted: (_) => _handleAuthSubmit(
-                    controller.text,
-                    expected,
-                    dialogContext,
-                    () => attempted = true,
-                    () => setState(() => invalid = true),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () => _handleAuthSubmit(
-                  controller.text,
-                  expected,
-                  dialogContext,
-                  () => attempted = true,
-                  () => setState(() => invalid = true),
-                ),
-                child: const Text('Continue'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    if (result == true) return true;
-    if (attempted && mounted) {
+    final result = await _showAdminAuthDialog(context, expected);
+    if (result?.success == true) return true;
+    if (result?.attempted == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Admin authentication failed.')),
       );
@@ -257,19 +311,26 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
     return false;
   }
 
-  void _handleAuthSubmit(
-    String input,
-    String expected,
-    BuildContext dialogContext,
-    VoidCallback onAttempted,
-    VoidCallback onInvalid,
-  ) {
-    onAttempted();
-    if (input.trim() == expected) {
-      Navigator.of(dialogContext).pop(true);
-    } else {
-      onInvalid();
+  String _formatDateShort(DateTime value) {
+    final local = value.toLocal();
+    final twoDigits = (int v) => v.toString().padLeft(2, '0');
+    return '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)}';
+  }
+
+  String _approvalSubtitle(StandardDef std) {
+    final by = std.approvedBy?.trim();
+    final at = std.approvedAt;
+    if ((by == null || by.isEmpty) && at == null) {
+      return 'Approved';
     }
+    final parts = <String>[];
+    if (by != null && by.isNotEmpty) {
+      parts.add('by $by');
+    }
+    if (at != null) {
+      parts.add('on ${_formatDateShort(at)}');
+    }
+    return 'Approved ${parts.join(' ')}';
   }
 
   @override
@@ -324,7 +385,18 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
                   itemBuilder: (_, i) {
                     final s = filteredStandards[i];
                     return ListTile(
+                      leading: s.approved
+                          ? const Icon(Icons.verified, color: Colors.green)
+                          : const Icon(Icons.warning_amber_rounded,
+                              color: Colors.amber),
                       title: Text('${s.code} — ${s.name}'),
+                      subtitle: s.approved
+                          ? Text(_approvalSubtitle(s))
+                          : Text(
+                              'Unapproved — requires admin approval',
+                              style:
+                                  TextStyle(color: Colors.amber.shade800),
+                            ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -378,6 +450,9 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   late final TextEditingController code;
   late final TextEditingController name;
   late final TextEditingController category;
+  late final TextEditingController approver;
+  bool _approved = false;
+  DateTime? _approvedAt;
   List<ParameterDef> parameters = [];
   final List<String> _parameterIds = [];
   int _nextParameterId = 0;
@@ -426,6 +501,119 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     );
   }
 
+  String _formatApprovalTimestamp(DateTime? timestamp) {
+    if (timestamp == null) return '';
+    final local = timestamp.toLocal();
+    final twoDigits = (int value) => value.toString().padLeft(2, '0');
+    final date =
+        '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)}';
+    final time = '${twoDigits(local.hour)}:${twoDigits(local.minute)}';
+    return '$date $time';
+  }
+
+  String _approvalStatusLabel() {
+    if (!_approved) {
+      return 'Unapproved — requires admin approval before use.';
+    }
+    final approverName = approver.text.trim();
+    final approvedOn = _formatApprovalTimestamp(_approvedAt);
+    if (approverName.isEmpty && approvedOn.isEmpty) return 'Approved';
+    if (approverName.isEmpty) return 'Approved on $approvedOn';
+    if (approvedOn.isEmpty) return 'Approved by $approverName';
+    return 'Approved by $approverName on $approvedOn';
+  }
+
+  Future<bool> _requireAdminAuthentication() async {
+    final expected = await AdminCredentialsStore.instance.loadAdminPassword();
+    final result = await _showAdminAuthDialog(context, expected);
+    if (result?.success == true) return true;
+    if (result?.attempted == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Admin authentication failed.')),
+      );
+    }
+    return false;
+  }
+
+  Future<void> _toggleApproval(bool value) async {
+    if (_approved == value) return;
+    final authenticated = await _requireAdminAuthentication();
+    if (!authenticated) return;
+    setState(() {
+      _approved = value;
+      if (value) {
+        _approvedAt = DateTime.now();
+        if (approver.text.trim().isEmpty) {
+          _updateControllerText(approver, 'Admin');
+        }
+      } else {
+        _approvedAt = null;
+      }
+    });
+  }
+
+  Widget _buildApprovalSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = _approved ? Colors.green : Colors.amber;
+    final statusChip = Chip(
+      backgroundColor: color.withOpacity(0.18),
+      label: Text(
+        _approved ? 'Approved' : 'Unapproved',
+        style: TextStyle(
+          color: _approved ? Colors.green.shade900 : Colors.amber.shade900,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            statusChip,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _approvalStatusLabel(),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: _approved ? Colors.green.shade900 : Colors.amber.shade900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: approver,
+          decoration: const InputDecoration(
+            labelText: 'Approver name/notes',
+            helperText: 'Stored with approval changes for this standard.',
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              icon: const Icon(Icons.verified_outlined),
+              onPressed: _approved ? null : () => _toggleApproval(true),
+              label: const Text('Approve'),
+            ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.undo),
+              onPressed: _approved ? () => _toggleApproval(false) : null,
+              label: const Text('Mark unapproved'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   void _applyDuplicateDraft({required bool initializing}) {
     final currentCode = code.text.trim();
     final nextCode = currentCode.isEmpty
@@ -438,6 +626,9 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       if (nextCode != code.text) {
         _updateControllerText(code, nextCode);
       }
+      _approved = false;
+      _approvedAt = null;
+      _updateControllerText(approver, '');
       parameters = parameters.map(_cloneParameterDef).toList();
       _resetParameterIds();
       staticComponents = staticComponents.map(_cloneStaticComponent).toList();
@@ -839,6 +1030,9 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     code = TextEditingController(text: e?.code ?? '');
     name = TextEditingController(text: e?.name ?? '');
     category = TextEditingController(text: e?.category ?? '');
+    approver = TextEditingController(text: e?.approvedBy ?? '');
+    _approved = e?.approved ?? false;
+    _approvedAt = e?.approvedAt;
     parameters = e == null
         ? []
         : e.parameters.map(_cloneParameterDef).toList();
@@ -865,6 +1059,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     code.dispose();
     name.dispose();
     category.dispose();
+    approver.dispose();
     super.dispose();
   }
 
@@ -943,14 +1138,18 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                 dynamicMm == null || dynamicMm.isEmpty ? null : dynamicMm,
             qty: c.qty,
           ),
-        );
+          );
       }
 
+      final approverName = approver.text.trim();
       final std = StandardDef(
         id: _standardId,
         code: code.text.trim(),
         name: name.text.trim(),
         category: category.text.trim(),
+        approved: _approved,
+        approvedBy: approverName.isEmpty ? null : approverName,
+        approvedAt: _approvedAt,
         parameters: cleaned,
         staticComponents: cleanedStatic,
         dynamicComponents: cleanedDynamic,
@@ -1047,6 +1246,9 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
         final mergedStandard = standardResult.merged;
         if (mergedStandard != null) {
           _standardId = mergedStandard.id;
+          _approved = mergedStandard.approved;
+          _approvedAt = mergedStandard.approvedAt;
+          _updateControllerText(approver, mergedStandard.approvedBy ?? '');
         }
         _originalStandard = mergedStandard;
         _resetParameterIds();
@@ -1228,6 +1430,9 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
           _standardId = remote.id;
           code.text = remote.code;
           name.text = remote.name;
+          _approved = remote.approved;
+          _approvedAt = remote.approvedAt;
+          _updateControllerText(approver, remote.approvedBy ?? '');
           parameters = remote.parameters.toList();
           staticComponents = remote.staticComponents.toList();
           dynamicComponents = remote.dynamicComponents.toList();
@@ -1327,6 +1532,8 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
               decoration: const InputDecoration(labelText: 'Category'),
             ),
             const SizedBox(height: 8),
+            _buildApprovalSection(context),
+            const SizedBox(height: 12),
             const Text('Parameters'),
             const SizedBox(height: 4),
             if (_loadingGlobalParameters)

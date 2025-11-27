@@ -431,6 +431,20 @@ class _StandardSelectionDialogState extends State<_StandardSelectionDialog> {
     return value.isEmpty ? 'Misc.' : value;
   }
 
+  Widget _approvalChip(StandardDef std) {
+    final color = std.approved ? Colors.green : Colors.amber;
+    return Chip(
+      backgroundColor: color.withOpacity(0.18),
+      label: Text(
+        std.approved ? 'Approved' : 'Unapproved',
+        style: TextStyle(
+          color: std.approved ? Colors.green.shade900 : Colors.amber.shade900,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
   Iterable<Widget> _buildListTiles(
     BuildContext context,
     List<MapEntry<String, List<StandardDef>>> groups,
@@ -453,6 +467,7 @@ class _StandardSelectionDialogState extends State<_StandardSelectionDialog> {
         yield ListTile(
           dense: true,
           title: Text('${std.code} — ${std.name}'),
+          trailing: _approvalChip(std),
           onTap: () => Navigator.of(context).pop(std),
         );
       }
@@ -818,6 +833,28 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
       builder: (_) => _StandardSelectionDialog(choices: available),
     );
     if (std != null) {
+      if (!std.approved) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Unapproved standard'),
+            content: Text(
+              '"${std.code} — ${std.name}" is not approved. Are you sure you want to apply it to this location?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Use anyway'),
+              ),
+            ],
+          ),
+        );
+        if (proceed != true) return;
+      }
       final assignment = StandardAssignment(
         standardId: std.id,
         metadata: {'code': std.code, 'name': std.name},
@@ -945,6 +982,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     final nameLabel = std?.name ??
         (assignment.metadata['name'] as String?) ??
         '';
+    final isUnapproved = std != null && !std.approved;
     final params = std?.parameters ?? const <ParameterDef>[];
     final hasParams = params.isNotEmpty;
     return Container(
@@ -978,6 +1016,19 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
                         nameLabel,
                         style: theme.textTheme.bodySmall
                             ?.copyWith(color: Colors.white70),
+                      ),
+                    ],
+                    if (isUnapproved) ...[
+                      const SizedBox(height: 6),
+                      Chip(
+                        backgroundColor: Colors.amber.withOpacity(0.2),
+                        label: Text(
+                          'Unapproved',
+                          style: TextStyle(
+                            color: Colors.amber.shade900,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ],
                     if (std == null) ...[
