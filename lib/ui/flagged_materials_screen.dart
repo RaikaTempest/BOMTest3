@@ -211,6 +211,7 @@ class _FlaggedMaterialsScreenState extends State<FlaggedMaterialsScreen> {
 
   @override
   void dispose() {
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
   }
