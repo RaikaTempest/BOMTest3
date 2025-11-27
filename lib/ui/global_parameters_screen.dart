@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
@@ -22,6 +24,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
   bool _loading = true;
   String _searchQuery = '';
   List<ParameterDef> _originalParameters = [];
+  String _initialStateSignature = '';
 
   String _createParameterId() => 'global_param_${_nextParameterId++}';
 
@@ -49,6 +52,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
         _originalParameters = List<ParameterDef>.from(list);
         _resetParameterIds();
         _loading = false;
+        _initialStateSignature = _serializeState();
       });
     } catch (_) {
       if (!mounted) return;
@@ -58,6 +62,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
         _originalParameters = [];
         _resetParameterIds();
         _loading = false;
+        _initialStateSignature = _serializeState();
       });
     }
   }
@@ -138,6 +143,7 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
         parameters = List<ParameterDef>.from(result.merged);
         _originalParameters = List<ParameterDef>.from(result.merged);
         _resetParameterIds();
+        _initialStateSignature = _serializeState();
       });
       if (!mounted) return;
       if (result.hasRemoteChanges) {
@@ -258,6 +264,36 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
     );
   }
 
+  String _serializeState() => jsonEncode({
+        'parameters': [for (final p in parameters) p.toJson()],
+      });
+
+  bool get _hasUnsavedChanges => _serializeState() != _initialStateSignature;
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_hasUnsavedChanges) return true;
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text(
+          'You have unsaved global parameter changes. Leave without saving?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    return shouldLeave == true;
+  }
+
   String _describeParameterConflict(ParameterConflict conflict) {
     switch (conflict.type) {
       case ParameterConflictType.addition:
@@ -285,107 +321,124 @@ class _GlobalParametersScreenState extends State<GlobalParametersScreen> {
               : entry.value.key.toLowerCase().contains(query),
         )
         .toList();
-    return BomScaffold(
-      appBar: AppBar(
-        title: const Text('Global Parameters'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 24),
-            child: FilledButton.icon(
-              onPressed: repo == null ? null : _save,
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('Save changes'),
-            ),
+    return WillPopScope(
+      onWillPop: _confirmDiscardChanges,
+      child: BomScaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () async {
+              if (await _confirmDiscardChanges()) {
+                if (mounted) {
+                  Navigator.of(context).maybePop();
+                }
+              }
+            },
           ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : repo == null
-              ? const Center(child: Text('Failed to load repository.'))
-              : parameters.isEmpty
-                  ? Center(
-                      child: GlassContainer(
-                        margin: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.tune,
-                                size: 46, color: theme.colorScheme.secondary),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No parameters defined yet',
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w700,
+          title: const Text('Global Parameters'),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 24),
+              child: FilledButton.icon(
+                onPressed: repo == null ? null : _save,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Save changes'),
+              ),
+            ),
+          ],
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : repo == null
+                ? const Center(child: Text('Failed to load repository.'))
+                : parameters.isEmpty
+                    ? Center(
+                        child: GlassContainer(
+                          margin: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.tune,
+                                  size: 46, color: theme.colorScheme.secondary),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No parameters defined yet',
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Create your global parameters to reuse them across every project.',
-                              textAlign: TextAlign.center,
-                              style: theme.textTheme.bodyMedium
-                                  ?.copyWith(color: Colors.white70),
-                            ),
-                          ],
+                              const SizedBox(height: 8),
+                              Text(
+                                'Create your global parameters to reuse them across every project.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium
+                                    ?.copyWith(color: Colors.white70),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    )
-                  : Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-                  child: Column(
-                    children: [
-                      TextField(
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search),
-                          hintText: 'Search parameters',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      Expanded(
-                        child: filteredEntries.isEmpty
-                            ? const Center(
-                                child:
-                                    Text('No parameters match your search.'),
-                              )
-                            : ListView.builder(
-                                itemCount: filteredEntries.length,
-                                itemBuilder: (context, index) {
-                                  final entry = filteredEntries[index];
-                                  return GlassContainer(
-                                    margin:
-                                        const EdgeInsets.symmetric(vertical: 12),
-                                    child: ParameterEditor(
-                                      key: ValueKey(
-                                        _parameterIds[entry.key],
-                                      ),
-                                      def: entry.value,
-                                      onChanged: (p) =>
-                                          _onParameterChanged(entry.key, p),
-                                      onDelete: () => _removeParameter(entry.key),
-                                      keySuggestions: parameters
-                                          .map((p) => p.key.trim())
-                                          .where((k) => k.isNotEmpty)
-                                          .toSet()
-                                          .toList(),
+                      )
+                    : Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 24, vertical: 24),
+                            child: TextField(
+                              decoration: const InputDecoration(
+                                labelText: 'Search parameters',
+                                prefixIcon: Icon(Icons.search),
+                              ),
+                              onChanged: (v) => setState(() => _searchQuery = v),
+                            ),
+                          ),
+                          Expanded(
+                            child: filteredEntries.isEmpty
+                                ? const Center(
+                                    child:
+                                        Text('No parameters match your search.'),
+                                  )
+                                : ListView.builder(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      24,
+                                      0,
+                                      24,
+                                      120,
                                     ),
-                                  );
-                                },
-                              ),
+                                    itemCount: filteredEntries.length,
+                                    itemBuilder: (context, index) {
+                                      final entry = filteredEntries[index];
+                                      final param = entry.value;
+                                      return ParameterEditor(
+                                        key: ValueKey(_parameterIds[entry.key]),
+                                        def: param,
+                                        onChanged: (p) =>
+                                            _onParameterChanged(entry.key, p),
+                                        onDelete: () =>
+                                            _removeParameter(entry.key),
+                                      );
+                                    },
+                                  ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(
+                                left: 24, bottom: 32, right: 24),
+                            child: Row(
+                              children: [
+                                FilledButton.icon(
+                                  onPressed: _addParameter,
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Add parameter'),
+                                ),
+                                const SizedBox(width: 12),
+                                Text('Total: ${parameters.length}',
+                                    style: theme.textTheme.bodyMedium),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: repo == null ? null : _addParameter,
-        icon: const Icon(Icons.add),
-        label: const Text('Add parameter'),
       ),
+    );
     );
   }
 }
