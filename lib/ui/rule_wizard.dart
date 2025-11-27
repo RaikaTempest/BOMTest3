@@ -82,9 +82,26 @@ class _ConditionFields {
 }
 
 class _RuleWizardState extends State<RuleWizard> {
+  static const Set<String> _supportedGroupOps = {
+    'and',
+    'or',
+    'xor',
+    'nor',
+    'nand',
+  };
+  static const List<String> _groupOpsList = [
+    'and',
+    'or',
+    'xor',
+    'nor',
+    'nand',
+  ];
+
   late final TextEditingController priority;
   final List<_ConditionFields> _conditions = [];
   final List<_OutputFields> _outputs = [];
+  String _groupOperator = 'and';
+  String? _unsupportedOperator;
 
   @override
   void initState() {
@@ -259,8 +276,9 @@ class _RuleWizardState extends State<RuleWizard> {
   Future<void> _save() async {
     try {
       final conds = _conditions.map((e) => e.toJsonLogic()).toList();
-      final Map<String, dynamic> expr =
-          conds.length == 1 ? conds.first : {'and': conds};
+      final groupOp =
+          _supportedGroupOps.contains(_groupOperator) ? _groupOperator : 'and';
+      final Map<String, dynamic> expr = {groupOp: conds};
       final rule = RuleDef(
         expr: expr,
         outputs: _outputs.map((e) => e.toOutputSpec()).toList(),
@@ -397,14 +415,38 @@ class _RuleWizardState extends State<RuleWizard> {
 
   void _loadExpr(Map<String, dynamic> expr) {
     _conditions.clear();
+    if (expr.isEmpty) return;
+
     Map<String, dynamic> m = expr;
-    if (m.containsKey('and')) {
-      final list = m['and'] as List;
-      for (final e in list) {
-        _conditions.add(_conditionFromExpr((e as Map).cast<String, dynamic>()));
+    final op = m.keys.first;
+    final val = m[op];
+
+    if (_supportedGroupOps.contains(op) && val is List) {
+      _groupOperator = op;
+      for (final e in val) {
+        if (e is Map<String, dynamic>) {
+          _conditions.add(_conditionFromExpr(e));
+        } else if (e is Map) {
+          _conditions.add(_conditionFromExpr(e.cast<String, dynamic>()));
+        }
       }
     } else {
-      _conditions.add(_conditionFromExpr(m));
+      if (!_supportedGroupOps.contains(op)) {
+        _unsupportedOperator =
+            'Unsupported operator "$op". Using AND for editing.';
+      }
+      if (val is List) {
+        for (final e in val) {
+          if (e is Map<String, dynamic>) {
+            _conditions.add(_conditionFromExpr(e));
+          } else if (e is Map) {
+            _conditions.add(_conditionFromExpr(e.cast<String, dynamic>()));
+          }
+        }
+      }
+      if (_conditions.isEmpty) {
+        _conditions.add(_conditionFromExpr(m));
+      }
     }
   }
 
@@ -469,6 +511,36 @@ class _RuleWizardState extends State<RuleWizard> {
             const SizedBox(height: 8),
             const Text('Conditions'),
             const SizedBox(height: 4),
+            Row(
+              children: [
+                const Text('Combine using'),
+                const SizedBox(width: 8),
+                DropdownButton<String>(
+                  value: _groupOperator,
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() => _groupOperator = value);
+                    }
+                  },
+                  items: _groupOpsList
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(e.toUpperCase()),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
+            if (_unsupportedOperator != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  _unsupportedOperator!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
             ..._conditions
                 .asMap()
                 .entries
