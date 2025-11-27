@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/models.dart';
+import '../data/admin_credentials_store.dart';
 import '../data/repo.dart';
 import '../data/repo_factory.dart';
 import 'dynamic_component_rules_screen.dart';
@@ -136,6 +137,10 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
   Future<void> _openDetail({StandardDef? standard, bool duplicate = false}) async {
     final repo = this.repo;
     if (repo == null) return;
+    if (standard != null) {
+      final authenticated = await _requireAdminAuthentication();
+      if (!authenticated) return;
+    }
     final initial = duplicate && standard != null
         ? _cloneStandardDef(standard)
         : standard;
@@ -154,6 +159,8 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
   }
 
   Future<void> _confirmDelete(StandardDef std) async {
+    final authenticated = await _requireAdminAuthentication();
+    if (!authenticated) return;
     final repo = this.repo;
     if (repo == null) return;
     final confirm = await showDialog<bool>(
@@ -181,6 +188,87 @@ class _StandardsManagerScreenState extends State<StandardsManagerScreen> {
       setState(() {
         standards.removeWhere((s) => s.code == std.code);
       });
+    }
+  }
+
+  Future<bool> _requireAdminAuthentication() async {
+    final expected = await AdminCredentialsStore.instance.loadAdminPassword();
+    final controller = TextEditingController();
+    var attempted = false;
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        bool invalid = false;
+        return StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            title: const Text('Admin authentication'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Enter the admin password to continue.'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    errorText: invalid ? 'Incorrect password' : null,
+                  ),
+                  onChanged: (_) => setState(() {
+                    if (invalid) invalid = false;
+                  }),
+                  onSubmitted: (_) => _handleAuthSubmit(
+                    controller.text,
+                    expected,
+                    dialogContext,
+                    () => attempted = true,
+                    () => setState(() => invalid = true),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => _handleAuthSubmit(
+                  controller.text,
+                  expected,
+                  dialogContext,
+                  () => attempted = true,
+                  () => setState(() => invalid = true),
+                ),
+                child: const Text('Continue'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (result == true) return true;
+    if (attempted && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Admin authentication failed.')),
+      );
+    }
+    return false;
+  }
+
+  void _handleAuthSubmit(
+    String input,
+    String expected,
+    BuildContext dialogContext,
+    VoidCallback onAttempted,
+    VoidCallback onInvalid,
+  ) {
+    onAttempted();
+    if (input.trim() == expected) {
+      Navigator.of(dialogContext).pop(true);
+    } else {
+      onInvalid();
     }
   }
 
