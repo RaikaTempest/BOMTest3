@@ -453,7 +453,10 @@ class _RuleWizardState extends State<RuleWizard> {
   _ConditionFields _conditionFromExpr(Map<String, dynamic> m) {
     if (m.isEmpty) return _ConditionFields();
     final op = m.keys.first;
-    final args = m[op] as List;
+    final args = m[op];
+    if (args is! List) {
+      return _ConditionFields();
+    }
     String param = '';
     String value = '';
     if (args.isNotEmpty) {
