@@ -10,6 +10,7 @@ class WebStandardsRepo implements StandardsRepo {
   static const _kFlaggedMaterials = 'bom_flagged_materials';
   static const _kPending = 'bom_cache_pending';
   static const _kApproved = 'bom_cache_approved';
+  static const _kAuditLog = 'bom_audit_log';
 
   Map<String, dynamic> _getMap(String key) {
     final txt = html.window.localStorage[key];
@@ -25,6 +26,40 @@ class WebStandardsRepo implements StandardsRepo {
 
   void _setMap(String key, Map<String, dynamic> map) {
     html.window.localStorage[key] = jsonEncode(map);
+  }
+
+  List<Map<String, dynamic>> _getAuditLog() {
+    final txt = html.window.localStorage[_kAuditLog];
+    if (txt == null || txt.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(txt);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((m) => m.cast<String, dynamic>())
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  void _appendAuditRecord(
+    String action, {
+    String? actor,
+    Map<String, dynamic>? metadata,
+    bool enabled = false,
+  }) {
+    if (!enabled) return;
+    final normalizedActor = actor?.trim();
+    if (normalizedActor == null || normalizedActor.isEmpty) return;
+    final log = _getAuditLog();
+    log.add({
+      'timestamp': DateTime.now().toIso8601String(),
+      'actor': normalizedActor,
+      'action': action,
+      if (metadata != null && metadata.isNotEmpty) 'metadata': metadata,
+    });
+    html.window.localStorage[_kAuditLog] = jsonEncode(log);
   }
 
   Map<String, StandardDef> _loadNormalizedStandards() {
@@ -66,7 +101,8 @@ class WebStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<StandardSaveResult> saveStandard(StandardSaveRequest request) async {
+  Future<StandardSaveResult> saveStandard(StandardSaveRequest request,
+      {String? actor, bool audit = false}) async {
     final updated = request.updated;
     final standards = _loadNormalizedStandards();
     final remote = standards[request.id];
@@ -81,16 +117,28 @@ class WebStandardsRepo implements StandardsRepo {
         },
       );
     }
-    return StandardSaveResult(
+    final result = StandardSaveResult(
       merged: unchanged ? remote : updated,
       conflict: null,
       wroteFile: !unchanged,
       alreadyUpToDate: unchanged,
     );
+    await _appendAuditRecord(
+      'save_standard',
+      actor: actor,
+      enabled: audit,
+      metadata: {
+        'id': request.id,
+        'code': updated.code,
+        'wroteFile': result.wroteFile,
+        'alreadyUpToDate': result.alreadyUpToDate,
+      },
+    );
+    return result;
   }
 
   @override
-  Future<void> deleteStandard(String code) async {
+  Future<void> deleteStandard(String code, {String? actor, bool audit = false}) async {
     final standards = _loadNormalizedStandards();
     final toRemove = standards.entries
         .where((entry) => entry.value.code == code)
@@ -109,6 +157,14 @@ class WebStandardsRepo implements StandardsRepo {
           entry.key: entry.value.toJson(),
       },
     );
+    if (toRemove.isNotEmpty) {
+      _appendAuditRecord(
+        'delete_standard',
+        actor: actor,
+        enabled: audit,
+        metadata: {'code': code},
+      );
+    }
   }
 
   @override
@@ -261,7 +317,7 @@ class WebStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> approveCache(String key) async {
+  Future<void> approveCache(String key, {String? actor, bool audit = false}) async {
     final p = _getMap(_kPending);
     final a = _getMap(_kApproved);
     if (p.containsKey(key)) {
@@ -269,6 +325,12 @@ class WebStandardsRepo implements StandardsRepo {
       p.remove(key);
       _setMap(_kApproved, a);
       _setMap(_kPending, p);
+      _appendAuditRecord(
+        'approve_cache',
+        actor: actor,
+        enabled: audit,
+        metadata: {'key': key},
+      );
     }
   }
 

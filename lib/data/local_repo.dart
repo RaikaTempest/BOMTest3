@@ -141,6 +141,31 @@ class LocalStandardsRepo implements StandardsRepo {
     }
   }
 
+  Future<void> _recordAudit(
+    String action, {
+    String? actor,
+    Map<String, dynamic>? metadata,
+    bool enabled = false,
+  }) async {
+    if (!enabled) return;
+    final normalizedActor = actor?.trim();
+    if (normalizedActor == null || normalizedActor.isEmpty) return;
+    final root = await _ensureRoot();
+    final logFile = File('${root.path}/audit.log');
+    final record = {
+      'timestamp': DateTime.now().toIso8601String(),
+      'actor': normalizedActor,
+      'action': action,
+      if (metadata != null && metadata.isNotEmpty) 'metadata': metadata,
+    };
+    await _withFileLock(logFile, () async {
+      final sink = logFile.openWrite(mode: FileMode.append);
+      sink.writeln(jsonEncode(record));
+      await sink.flush();
+      await sink.close();
+    });
+  }
+
   @override
   Future<List<StandardDef>> listStandards() async {
     final r = await _ensureRoot();
@@ -167,7 +192,8 @@ class LocalStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<StandardSaveResult> saveStandard(StandardSaveRequest request) async {
+  Future<StandardSaveResult> saveStandard(StandardSaveRequest request,
+      {String? actor, bool audit = false}) async {
     final updated = request.updated;
     final originalCode = request.original?.code ?? updated.code;
     final fileToLock = await _stdFile(originalCode);
@@ -217,7 +243,7 @@ class LocalStandardsRepo implements StandardsRepo {
         }
       }
 
-      return StandardSaveResult(
+      final result = StandardSaveResult(
         merged: plan.finalStandard,
         conflict: plan.conflict,
         wroteFile: wroteFile,
@@ -225,18 +251,44 @@ class LocalStandardsRepo implements StandardsRepo {
             ? plan.alreadyUpToDate
             : false,
       );
+
+      if (result.conflict == null) {
+        await _recordAudit(
+          'save_standard',
+          actor: actor,
+          enabled: audit,
+          metadata: {
+            'id': request.id,
+            'code': updated.code,
+            'wroteFile': result.wroteFile,
+            'alreadyUpToDate': result.alreadyUpToDate,
+          },
+        );
+      }
+
+      return result;
     });
   }
 
   @override
-  Future<void> deleteStandard(String code) async {
+  Future<void> deleteStandard(String code, {String? actor, bool audit = false}) async {
     final f = await _stdFile(code);
+    var deleted = false;
     await _withFileLock(f, () async {
       if (await f.exists()) {
         await f.readAsString();
         await f.delete();
+        deleted = true;
       }
     });
+    if (deleted) {
+      await _recordAudit(
+        'delete_standard',
+        actor: actor,
+        enabled: audit,
+        metadata: {'code': code},
+      );
+    }
   }
 
   @override
@@ -551,8 +603,9 @@ class LocalStandardsRepo implements StandardsRepo {
   }
 
   @override
-  Future<void> approveCache(String key) async {
+  Future<void> approveCache(String key, {String? actor, bool audit = false}) async {
     final src = await _pendingFile(key);
+    var approved = false;
     await _withFileLock(src, () async {
       if (!await src.exists()) return;
       final contents = await src.readAsString();
@@ -564,9 +617,18 @@ class LocalStandardsRepo implements StandardsRepo {
         final tmp = File('${dst.path}.tmp');
         await tmp.writeAsString(contents, flush: true);
         await tmp.rename(dst.path);
+        approved = true;
       });
       await src.delete();
     });
+    if (approved) {
+      await _recordAudit(
+        'approve_cache',
+        actor: actor,
+        enabled: audit,
+        metadata: {'key': key},
+      );
+    }
   }
 
   @override
