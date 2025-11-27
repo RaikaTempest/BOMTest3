@@ -84,9 +84,17 @@ class LocalStandardsRepo implements StandardsRepo {
     if (!await file.exists()) return null;
     final txt = await file.readAsString();
     if (txt.trim().isEmpty) return null;
-    final decoded = jsonDecode(txt);
-    if (decoded is Map<String, dynamic>) {
-      return StandardDef.fromJson(decoded);
+    try {
+      final decoded = jsonDecode(txt);
+      if (decoded is Map<String, dynamic>) {
+        return StandardDef.fromJson(decoded);
+      }
+    } on FormatException catch (e, st) {
+      debugPrint('Failed to parse standard file ${file.path}: $e');
+      debugPrintStack(stackTrace: st);
+    } catch (e, st) {
+      debugPrint('Failed to decode standard file ${file.path}: $e');
+      debugPrintStack(stackTrace: st);
     }
     return null;
   }
