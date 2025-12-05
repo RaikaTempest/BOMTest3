@@ -588,11 +588,14 @@ class _RepoLocationButtonState extends State<_RepoLocationButton> {
       final Directory absoluteTarget = targetDir.absolute;
       await absoluteTarget.create(recursive: true);
       final selectedPath = absoluteTarget.path;
+      final bomDataPath =
+          Directory(p.normalize(p.join(selectedPath, 'bom_data'))).absolute.path;
+      final bomDataDir = Directory(bomDataPath);
 
       final store = RepoLocationStore.instance;
       final currentRoot = await store.resolveRootPath();
       final normalizedCurrent = Directory(currentRoot).absolute.path;
-      if (p.equals(normalizedCurrent, selectedPath)) {
+      if (p.equals(normalizedCurrent, bomDataPath)) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Selected folder is already in use.')),
@@ -600,23 +603,25 @@ class _RepoLocationButtonState extends State<_RepoLocationButton> {
         return;
       }
 
-      final bool targetEmpty = await _isDirectoryEmpty(absoluteTarget);
       var migrated = false;
-      if (targetEmpty) {
+      final hasExistingBomData = await bomDataDir.exists();
+      if (!hasExistingBomData) {
         final sourceDir = Directory(normalizedCurrent);
         if (await sourceDir.exists()) {
-          await _copyDirectory(sourceDir, absoluteTarget);
+          await bomDataDir.create(recursive: true);
+          await _copyDirectory(sourceDir, bomDataDir);
           migrated = true;
         }
       }
 
-      await store.setPreferredRoot(selectedPath);
+      await store.setPreferredRoot(bomDataPath);
       if (!mounted) return;
       final buffer = StringBuffer('Standards location updated. ');
       if (migrated) {
         buffer.write('Copied existing files to the selected folder. ');
-      } else if (!targetEmpty) {
-        buffer.write('Kept existing files already in the selected folder. ');
+      } else if (hasExistingBomData) {
+        buffer.write(
+            'Existing BOM data in the selected location was kept untouched. ');
       }
       buffer.write('Restart or reload the app to load data from the new path.');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -631,17 +636,6 @@ class _RepoLocationButtonState extends State<_RepoLocationButton> {
       if (mounted) {
         setState(() => _busy = false);
       }
-    }
-  }
-
-  Future<bool> _isDirectoryEmpty(Directory dir) async {
-    try {
-      if (!await dir.exists()) {
-        return true;
-      }
-      return await dir.list(followLinks: false).isEmpty;
-    } catch (_) {
-      return true;
     }
   }
 
