@@ -1922,6 +1922,11 @@ class _StaticEditorState extends State<_StaticEditor> {
     );
   }
 
+  String _displayMmOption(String option) {
+    if (option == _literalOption) return 'Literal MM';
+    return 'Dynamic: $option';
+  }
+
   @override
   Widget build(BuildContext context) {
     final dynamicNames = widget.availableDynamicComponents
@@ -1930,26 +1935,11 @@ class _StaticEditorState extends State<_StaticEditor> {
         .toSet()
         .toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    final dropdownItems = <DropdownMenuItem<String>>[
-      const DropdownMenuItem(
-        value: _literalOption,
-        child: Text('Literal MM'),
-      ),
-      ...dynamicNames.map(
-        (name) => DropdownMenuItem<String>(
-          value: name,
-          child: Text('Dynamic: $name'),
-        ),
-      ),
-    ];
+    final mmOptions = <String>[_literalOption, ...dynamicNames];
     if (_mmSource != _literalOption && !dynamicNames.contains(_mmSource)) {
-      dropdownItems.add(
-        DropdownMenuItem<String>(
-          value: _mmSource,
-          child: Text('Dynamic: $_mmSource'),
-        ),
-      );
+      mmOptions.add(_mmSource);
     }
+    final selectedDisplay = _displayMmOption(_mmSource);
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -1971,17 +1961,33 @@ class _StaticEditorState extends State<_StaticEditor> {
                     onChanged: (_) => _notify(),
                   ),
                   const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    value: _mmSource,
-                    decoration: const InputDecoration(labelText: 'MM Source'),
-                    items: dropdownItems,
-                    isExpanded: true,
-                    onChanged: (value) {
-                      if (value == null) return;
+                  Autocomplete<String>(
+                    key: ValueKey(_mmSource),
+                    initialValue: TextEditingValue(text: selectedDisplay),
+                    displayStringForOption: _displayMmOption,
+                    optionsBuilder: (textEditingValue) {
+                      final query = textEditingValue.text.trim().toLowerCase();
+                      if (query.isEmpty) return mmOptions;
+                      return mmOptions.where(
+                        (option) =>
+                            _displayMmOption(option).toLowerCase().contains(query),
+                      );
+                    },
+                    onSelected: (value) {
                       setState(() {
                         _mmSource = value;
                       });
                       _notify();
+                    },
+                    fieldViewBuilder:
+                        (context, controller, focusNode, onFieldSubmitted) {
+                      return TextField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        decoration:
+                            const InputDecoration(labelText: 'MM Source'),
+                        onSubmitted: (_) => onFieldSubmitted(),
+                      );
                     },
                   ),
                   if (_mmSource == _literalOption) ...[
