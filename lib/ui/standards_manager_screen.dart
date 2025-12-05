@@ -1779,45 +1779,46 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
                         );
                         _combineGlobalDynamicComponents();
                       }),
-                    onEditRules: () => _openRulesManager(e.key),
-                    onDelete:
-                        () => setState(() {
-                          dynamicComponents.removeAt(e.key);
-                          _dynamicComponentIds.removeAt(e.key);
-                          _combineGlobalDynamicComponents();
-                        }),
+                      onEditRules: () => _openRulesManager(e.key),
+                      onDelete:
+                          () => setState(() {
+                            dynamicComponents.removeAt(e.key);
+                            _dynamicComponentIds.removeAt(e.key);
+                            _combineGlobalDynamicComponents();
+                          }),
+                    ),
+                  )
+                  .toList(),
+              Wrap(
+                spacing: 8,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => setState(() {
+                      dynamicComponents.add(
+                        DynamicComponentDef(name: '', rules: []),
+                      );
+                      _dynamicComponentIds.add(_createDynamicComponentId());
+                      _combineGlobalDynamicComponents();
+                    }),
+                    icon: const Icon(Icons.add),
+                    label: const Text('New Dynamic Component'),
                   ),
-                )
-                .toList(),
-            Wrap(
-              spacing: 8,
-              children: [
-                TextButton.icon(
-                  onPressed: () => setState(() {
-                    dynamicComponents.add(
-                      DynamicComponentDef(name: '', rules: []),
-                    );
-                    _dynamicComponentIds.add(_createDynamicComponentId());
-                    _combineGlobalDynamicComponents();
-                  }),
-                  icon: const Icon(Icons.add),
-                  label: const Text('New Dynamic Component'),
-                ),
-                TextButton.icon(
-                  onPressed: _loadingGlobalDynamicComponents
-                      ? null
-                      : _addExistingDynamicComponent,
-                  icon: const Icon(Icons.playlist_add),
-                  label: const Text('Add Existing Dynamic Component'),
-                ),
-              ],
-            ),
-          ],
+                  TextButton.icon(
+                    onPressed: _loadingGlobalDynamicComponents
+                        ? null
+                        : _addExistingDynamicComponent,
+                    icon: const Icon(Icons.playlist_add),
+                    label: const Text('Add Existing Dynamic Component'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _save,
-        child: const Icon(Icons.save),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _save,
+          child: const Icon(Icons.save),
+        ),
       ),
     );
   }
