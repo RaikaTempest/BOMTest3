@@ -31,6 +31,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
   late List<WorkLocation> locations;
   String? _name;
   String _initialStateSignature = '';
+  List<StandardAssignment>? _copiedAssignments;
 
   @override
   void initState() {
@@ -242,9 +243,26 @@ class _ProjectScreenState extends State<ProjectScreen> {
                                   ],
                                 ),
                               ),
-                              FilledButton.tonal(
-                                onPressed: () => _openStandards(index),
-                                child: const Text('Configure'),
+                              Wrap(
+                                spacing: 8,
+                                children: [
+                                  FilledButton.tonal(
+                                    onPressed: () => _openStandards(index),
+                                    child: const Text('Configure'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: () => _copyLocationConfig(index),
+                                    icon: const Icon(Icons.copy_all_outlined),
+                                    label: const Text('Copy config'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: _copiedAssignments == null
+                                        ? null
+                                        : () => _pasteLocationConfig(index),
+                                    icon: const Icon(Icons.paste_outlined),
+                                    label: const Text('Paste config'),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -397,6 +415,35 @@ class _ProjectScreenState extends State<ProjectScreen> {
     setState(() {
       _initialStateSignature = _serializeState();
     });
+  }
+
+  void _copyLocationConfig(int index) {
+    final source = locations[index];
+    setState(() {
+      _copiedAssignments = [
+        for (final assignment in source.assignments) assignment.copy(),
+      ];
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Copied standards configuration (barcode excluded).'),
+      ),
+    );
+  }
+
+  void _pasteLocationConfig(int index) {
+    if (_copiedAssignments == null) return;
+    setState(() {
+      locations[index].assignments = [
+        for (final assignment in _copiedAssignments!)
+          assignment.copy(regenerateInstanceId: true),
+      ];
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Pasted standards configuration.'),
+      ),
+    );
   }
 }
 
