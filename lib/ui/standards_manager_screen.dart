@@ -527,6 +527,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
   bool _loadingGlobalDynamicComponents = true;
   StandardDef? _originalStandard;
   late String _standardId;
+  late String _initialFormStateSignature;
   List<ParameterDef> _originalGlobalParameters = [];
   List<ParameterDef> _serverGlobalParameters = [];
   List<DynamicComponentDef> _originalGlobalDynamicComponents = [];
@@ -551,6 +552,50 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
       ..addAll(
         List.generate(dynamicComponents.length, (_) => _createDynamicComponentId()),
       );
+  }
+
+  String _serializeFormState() => jsonEncode({
+        'actor': actor.text.trim(),
+        'code': code.text.trim(),
+        'name': name.text.trim(),
+        'category': category.text.trim(),
+        'approver': approver.text.trim(),
+        'approved': _approved,
+        'approvedAt': _approvedAt?.toIso8601String(),
+        'parameters': [for (final p in parameters) p.toJson()],
+        'staticComponents': [for (final c in staticComponents) c.toJson()],
+        'dynamicComponents': [for (final c in dynamicComponents) c.toJson()],
+      });
+
+  void _captureInitialFormState() {
+    _initialFormStateSignature = _serializeFormState();
+  }
+
+  bool get _hasUnsavedChanges =>
+      _serializeFormState() != _initialFormStateSignature;
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (!_hasUnsavedChanges) return true;
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text(
+          'Leaving will discard any updates to this standard.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    return shouldLeave == true;
   }
 
   void _updateControllerText(TextEditingController controller, String text) {
@@ -1114,6 +1159,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
     }
     _loadGlobalParameters();
     _loadGlobalDynamicComponents();
+    _captureInitialFormState();
   }
 
   @override
@@ -1518,6 +1564,7 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
           _resetParameterIds();
           _resetDynamicComponentIds();
         });
+        _captureInitialFormState();
       }
     }
   }
@@ -1573,153 +1620,165 @@ class _StandardDetailScreenState extends State<_StandardDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_originalStandard == null ? 'Add Standard' : 'Edit Standard'),
-        actions: [
-          IconButton(
-            onPressed: _duplicateCurrentForm,
-            tooltip: 'Duplicate as new',
-            icon: const Icon(Icons.copy),
+    return WillPopScope(
+      onWillPop: _confirmDiscardChanges,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: BackButton(
+            onPressed: () async {
+              if (await _confirmDiscardChanges()) {
+                if (mounted) {
+                  Navigator.of(context).maybePop();
+                }
+              }
+            },
           ),
-          TextButton(
-            onPressed: _save,
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white,
-              backgroundColor: Theme.of(context).colorScheme.secondary,
+          title:
+              Text(_originalStandard == null ? 'Add Standard' : 'Edit Standard'),
+          actions: [
+            IconButton(
+              onPressed: _duplicateCurrentForm,
+              tooltip: 'Duplicate as new',
+              icon: const Icon(Icons.copy),
             ),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child: ListView(
-          children: [
-            TextField(
-              controller: actor,
-              decoration: const InputDecoration(
-                labelText: 'Actor (who is editing)',
-                helperText: 'Recorded for audit trails.',
+            TextButton(
+              onPressed: _save,
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).colorScheme.secondary,
               ),
+              child: const Text('Save'),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: code,
-              decoration: const InputDecoration(labelText: 'Code'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: name,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: category,
-              decoration: const InputDecoration(labelText: 'Category'),
-            ),
-            const SizedBox(height: 8),
-            _buildApprovalSection(context),
-            const SizedBox(height: 12),
-            const Text('Parameters'),
-            const SizedBox(height: 4),
-            if (_loadingGlobalParameters)
-              const LinearProgressIndicator(),
-            if (_loadingGlobalParameters)
-              const SizedBox(height: 8),
-            ...parameters
-                .asMap()
-                .entries
-                .map(
-                  (e) => ParameterEditor(
-                    key: ValueKey(_parameterIds[e.key]),
-                    def: e.value,
-                    onChanged: (p) => _onParameterChanged(e.key, p),
-                    onDelete: () => _removeParameterAt(e.key),
-                    keySuggestions: () {
-                      final suggestions = <String>{
-                        ...globalParameters
-                            .map((p) => p.key.trim())
-                            .where((k) => k.isNotEmpty),
-                        ...parameters
-                            .map((p) => p.key.trim())
-                            .where((k) => k.isNotEmpty),
-                      };
-                      return suggestions.toList();
-                    }(),
-                  ),
-                )
-                .toList(),
-            Wrap(
-              spacing: 8,
-              children: [
-                TextButton.icon(
-                  onPressed: _addNewParameter,
-                  icon: const Icon(Icons.add),
-                  label: const Text('New Parameter'),
+          ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(12),
+          child: ListView(
+            children: [
+              TextField(
+                controller: actor,
+                decoration: const InputDecoration(
+                  labelText: 'Actor (who is editing)',
+                  helperText: 'Recorded for audit trails.',
                 ),
-                TextButton.icon(
-                  onPressed:
-                      _loadingGlobalParameters ? null : _addExistingParameter,
-                  icon: const Icon(Icons.playlist_add),
-                  label: const Text('Add Existing Parameter'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Text('Static Components'),
-            const SizedBox(height: 4),
-            ...staticComponents
-                .asMap()
-                .entries
-                .map(
-                  (e) => _StaticEditor(
-                    comp: e.value,
-                    availableDynamicComponents: globalDynamicComponents,
-                    onChanged:
-                        (c) => setState(() {
-                          staticComponents[e.key] = c;
-                        }),
-                    onDelete:
-                        () => setState(() {
-                          staticComponents.removeAt(e.key);
-                        }),
-                  ),
-                )
-                .toList(),
-            TextButton.icon(
-              onPressed:
-                  () => setState(() {
-                    staticComponents.add(StaticComponent(mm: '', qty: 1));
-                  }),
-              icon: const Icon(Icons.add),
-              label: const Text('Add Static Component'),
-            ),
-            const SizedBox(height: 8),
-            const Text('Dynamic Components'),
-            const SizedBox(height: 4),
-            if (_loadingGlobalDynamicComponents)
-              const LinearProgressIndicator(),
-            if (_loadingGlobalDynamicComponents)
+              ),
               const SizedBox(height: 8),
-            ...dynamicComponents
-                .asMap()
-                .entries
-                .map(
-                  (e) => DynamicComponentEditor(
-                    key: ValueKey(_dynamicComponentIds[e.key]),
-                    comp: e.value,
-                    onNameChanged: (name) => setState(() {
-                      final old = dynamicComponents[e.key];
-                      dynamicComponents[e.key] = DynamicComponentDef(
-                        name: name,
-                        selectionStrategy: old.selectionStrategy,
-                        rules: old.rules,
-                        matrix: old.matrix,
-                        mmPattern: old.mmPattern,
-                      );
-                      _combineGlobalDynamicComponents();
+              TextField(
+                controller: code,
+                decoration: const InputDecoration(labelText: 'Code'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: name,
+                decoration: const InputDecoration(labelText: 'Name'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: category,
+                decoration: const InputDecoration(labelText: 'Category'),
+              ),
+              const SizedBox(height: 8),
+              _buildApprovalSection(context),
+              const SizedBox(height: 12),
+              const Text('Parameters'),
+              const SizedBox(height: 4),
+              if (_loadingGlobalParameters)
+                const LinearProgressIndicator(),
+              if (_loadingGlobalParameters)
+                const SizedBox(height: 8),
+              ...parameters
+                  .asMap()
+                  .entries
+                  .map(
+                    (e) => ParameterEditor(
+                      key: ValueKey(_parameterIds[e.key]),
+                      def: e.value,
+                      onChanged: (p) => _onParameterChanged(e.key, p),
+                      onDelete: () => _removeParameterAt(e.key),
+                      keySuggestions: () {
+                        final suggestions = <String>{
+                          ...globalParameters
+                              .map((p) => p.key.trim())
+                              .where((k) => k.isNotEmpty),
+                          ...parameters
+                              .map((p) => p.key.trim())
+                              .where((k) => k.isNotEmpty),
+                        };
+                        return suggestions.toList();
+                      }(),
+                    ),
+                  )
+                  .toList(),
+              Wrap(
+                spacing: 8,
+                children: [
+                  TextButton.icon(
+                    onPressed: _addNewParameter,
+                    icon: const Icon(Icons.add),
+                    label: const Text('New Parameter'),
+                  ),
+                  TextButton.icon(
+                    onPressed:
+                        _loadingGlobalParameters ? null : _addExistingParameter,
+                    icon: const Icon(Icons.playlist_add),
+                    label: const Text('Add Existing Parameter'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text('Static Components'),
+              const SizedBox(height: 4),
+              ...staticComponents
+                  .asMap()
+                  .entries
+                  .map(
+                    (e) => _StaticEditor(
+                      comp: e.value,
+                      availableDynamicComponents: globalDynamicComponents,
+                      onChanged:
+                          (c) => setState(() {
+                            staticComponents[e.key] = c;
+                          }),
+                      onDelete:
+                          () => setState(() {
+                            staticComponents.removeAt(e.key);
+                          }),
+                    ),
+                  )
+                  .toList(),
+              TextButton.icon(
+                onPressed:
+                    () => setState(() {
+                      staticComponents.add(StaticComponent(mm: '', qty: 1));
                     }),
+                icon: const Icon(Icons.add),
+                label: const Text('Add Static Component'),
+              ),
+              const SizedBox(height: 8),
+              const Text('Dynamic Components'),
+              const SizedBox(height: 4),
+              if (_loadingGlobalDynamicComponents)
+                const LinearProgressIndicator(),
+              if (_loadingGlobalDynamicComponents)
+                const SizedBox(height: 8),
+              ...dynamicComponents
+                  .asMap()
+                  .entries
+                  .map(
+                    (e) => DynamicComponentEditor(
+                      key: ValueKey(_dynamicComponentIds[e.key]),
+                      comp: e.value,
+                      onNameChanged: (name) => setState(() {
+                        final old = dynamicComponents[e.key];
+                        dynamicComponents[e.key] = DynamicComponentDef(
+                          name: name,
+                          selectionStrategy: old.selectionStrategy,
+                          rules: old.rules,
+                          matrix: old.matrix,
+                          mmPattern: old.mmPattern,
+                        );
+                        _combineGlobalDynamicComponents();
+                      }),
                     onEditRules: () => _openRulesManager(e.key),
                     onDelete:
                         () => setState(() {
