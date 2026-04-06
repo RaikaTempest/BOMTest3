@@ -120,6 +120,10 @@ class _ProjectScreenState extends State<ProjectScreen> {
   }
 
   Future<void> _openStandards(int index) async {
+    final location = locations[index];
+    final locationLabel = location.barcode.trim().isNotEmpty
+        ? location.barcode.trim()
+        : 'Work location ${index + 1}';
     final repo = await createRepo();
     final allStds = await repo.listStandards();
     final result = await Navigator.of(context).push<Map<String, dynamic>>(
@@ -127,10 +131,10 @@ class _ProjectScreenState extends State<ProjectScreen> {
         builder: (_) => LocationStandardsScreen(
           available: allStds,
           assignments: [
-            for (final assignment in locations[index].assignments)
+            for (final assignment in location.assignments)
               assignment.copy(),
           ],
-          locationLabel: 'Work location ${index + 1}',
+          locationLabel: locationLabel,
         ),
       ),
     );

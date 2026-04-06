@@ -110,7 +110,9 @@ class LocalProjectRepo {
     final out = <String>[];
     await for (final f in dir.list()) {
       if (f is File && f.path.endsWith('.json')) {
-        out.add(f.uri.pathSegments.last.replaceFirst('.json', ''));
+        final name = f.uri.pathSegments.last.replaceFirst('.json', '');
+        if (name.startsWith('.')) continue;
+        out.add(name);
       }
     }
     out.sort();
