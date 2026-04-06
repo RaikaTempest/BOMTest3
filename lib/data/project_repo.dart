@@ -4,6 +4,16 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import '../core/models.dart';
 
+class RecentProjectEntry {
+  final String name;
+  final DateTime lastAccessedAt;
+
+  const RecentProjectEntry({
+    required this.name,
+    required this.lastAccessedAt,
+  });
+}
+
 class LocalProjectRepo {
   Directory? _root;
 
@@ -28,6 +38,50 @@ class LocalProjectRepo {
     return File('${dir.path}/$name.json');
   }
 
+  Future<File> _recentFile() async {
+    final root = await _ensureRoot();
+    return File('${root.path}/.recent_projects.json');
+  }
+
+  Future<Map<String, dynamic>> _readRecentData() async {
+    final file = await _recentFile();
+    if (!await file.exists()) return <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      if (decoded is Map) {
+        return decoded.cast<String, dynamic>();
+      }
+      return <String, dynamic>{};
+    } catch (_) {
+      return <String, dynamic>{};
+    }
+  }
+
+  Future<void> _writeRecentData(Map<String, dynamic> data) async {
+    final file = await _recentFile();
+    final tmp = File('${file.path}.tmp');
+    await tmp.writeAsString(jsonEncode(data), flush: true);
+    await tmp.rename(file.path);
+  }
+
+  Future<void> _touchRecentProject(String name) async {
+    final normalized = name.trim();
+    if (normalized.isEmpty) return;
+    final data = await _readRecentData();
+    data[normalized] = DateTime.now().toIso8601String();
+    await _writeRecentData(data);
+  }
+
+  Future<void> _removeRecentProject(String name) async {
+    final data = await _readRecentData();
+    if (data.remove(name) != null) {
+      await _writeRecentData(data);
+    }
+  }
+
   Future<void> saveProject(Project p) async {
     final activeFile = await _file(p.name);
     final archivedFile = await _file(p.name, archived: true);
@@ -37,13 +91,18 @@ class LocalProjectRepo {
     final tmp = File('${activeFile.path}.tmp');
     await tmp.writeAsString(jsonEncode(p.toJson()), flush: true);
     await tmp.rename(activeFile.path);
+    await _touchRecentProject(p.name);
   }
 
   Future<Project?> loadProject(String name, {bool archived = false}) async {
     final f = await _file(name, archived: archived);
     if (!await f.exists()) return null;
     final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
-    return Project.fromJson(j);
+    final project = Project.fromJson(j);
+    if (!archived) {
+      await _touchRecentProject(project.name);
+    }
+    return project;
   }
 
   Future<List<String>> listProjects({bool archived = false}) async {
@@ -66,6 +125,7 @@ class LocalProjectRepo {
       await destination.delete();
     }
     await source.rename(destination.path);
+    await _removeRecentProject(name);
   }
 
   Future<void> unarchiveProject(String name) async {
@@ -76,5 +136,29 @@ class LocalProjectRepo {
       await destination.delete();
     }
     await source.rename(destination.path);
+    await _touchRecentProject(name);
+  }
+
+  Future<List<RecentProjectEntry>> listRecentProjects({
+    int limit = 6,
+  }) async {
+    final names = (await listProjects()).toSet();
+    final data = await _readRecentData();
+    final entries = <RecentProjectEntry>[];
+    for (final entry in data.entries) {
+      if (!names.contains(entry.key)) continue;
+      final parsed = DateTime.tryParse('${entry.value}');
+      if (parsed == null) continue;
+      entries.add(
+        RecentProjectEntry(name: entry.key, lastAccessedAt: parsed),
+      );
+    }
+    entries.sort(
+      (a, b) => b.lastAccessedAt.compareTo(a.lastAccessedAt),
+    );
+    if (entries.length > limit) {
+      return entries.sublist(0, limit);
+    }
+    return entries;
   }
 }

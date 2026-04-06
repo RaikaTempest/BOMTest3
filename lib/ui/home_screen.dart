@@ -3,12 +3,8 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
-import 'package:uuid/uuid.dart';
-
 import '../core/models.dart';
 import '../data/project_repo.dart';
-import '../data/repo.dart';
-import '../data/repo_factory.dart';
 import '../data/repo_location_store.dart';
 import 'flagged_materials_screen.dart';
 import 'global_dynamic_components_screen.dart';
@@ -139,74 +135,20 @@ class _JobTab extends StatefulWidget {
 }
 
 class _JobTabState extends State<_JobTab> {
-  StandardsRepo? repo;
-  late Future<List<StandardDef>> _future;
+  final LocalProjectRepo _projectRepo = LocalProjectRepo();
+  late Future<List<RecentProjectEntry>> _recentFuture;
 
   @override
   void initState() {
     super.initState();
-    _future = _initialize();
-  }
-
-  Future<List<StandardDef>> _initialize() async {
-    final loadedRepo = await createRepo();
-    repo = loadedRepo;
-    return _loadOrSeed(loadedRepo);
-  }
-
-  Future<List<StandardDef>> _loadOrSeed(StandardsRepo repo) async {
-    var list = await repo.listStandards();
-    if (list.isEmpty) {
-      final std = StandardDef(
-        id: const Uuid().v4(),
-        code: 'FS12',
-        name: 'Framing Standard 12',
-        approved: true,
-        approvedBy: 'System seed',
-        approvedAt: DateTime.now(),
-        parameters: [ParameterDef(key: 'PoleHeight', type: ParamType.number)],
-        staticComponents: [
-          StaticComponent(label: 'Brace', mm: 'MM#BRACE-STD', qty: 2),
-        ],
-        dynamicComponents: [
-          DynamicComponentDef(
-            name: 'Primary Connector',
-            rules: [
-              RuleDef(
-                expr: {
-                  '>=': [
-                    {'var': 'PoleHeight'},
-                    40,
-                  ],
-                },
-                outputs: [OutputSpec(mm: 'MM#PC-40', qty: 1)],
-              ),
-              RuleDef(
-                expr: {
-                  '<': [
-                    {'var': 'PoleHeight'},
-                    40,
-                  ],
-                },
-                outputs: [OutputSpec(mm: 'MM#PC-35', qty: 1)],
-              ),
-            ],
-          ),
-        ],
-      );
-      await repo.saveStandard(
-        StandardSaveRequest(id: std.id, updated: std),
-      );
-      list = await repo.listStandards();
-    }
-    return list;
+    _recentFuture = _projectRepo.listRecentProjects();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return FutureBuilder<List<StandardDef>>(
-      future: _future,
+    return FutureBuilder<List<RecentProjectEntry>>(
+      future: _recentFuture,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
@@ -242,7 +184,7 @@ class _JobTabState extends State<_JobTab> {
             ),
           );
         }
-        final standards = snap.data ?? <StandardDef>[];
+        final recentProjects = snap.data ?? const <RecentProjectEntry>[];
         return LayoutBuilder(
           builder: (context, constraints) {
             final isWide = constraints.maxWidth > 900;
@@ -279,11 +221,15 @@ class _JobTabState extends State<_JobTab> {
                                     onTap: () async {
                                       final count = await _promptLocationCount(context);
                                       if (count != null && mounted) {
-                                        Navigator.of(context).push(
+                                        await Navigator.of(context).push(
                                           MaterialPageRoute(
                                             builder: (_) => ProjectScreen(initialCount: count),
                                           ),
                                         );
+                                        if (!mounted) return;
+                                        setState(() {
+                                          _recentFuture = _projectRepo.listRecentProjects();
+                                        });
                                       }
                                     },
                                   ),
@@ -318,12 +264,12 @@ class _JobTabState extends State<_JobTab> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _SectionHeader(
-                                title: 'Standards snapshot',
+                                title: 'Recent projects',
                                 subtitle:
-                                    'A quick look at the rules powering your BOM calculations.',
+                                    'Jump back into the latest active projects in one tap.',
                               ),
                               const SizedBox(height: 20),
-                              if (standards.isEmpty)
+                              if (recentProjects.isEmpty)
                                 Container(
                                   padding: const EdgeInsets.all(20),
                                   decoration: BoxDecoration(
@@ -333,12 +279,12 @@ class _JobTabState extends State<_JobTab> {
                                   ),
                                   child: Row(
                                     children: [
-                                      Icon(Icons.auto_fix_high,
+                                      Icon(Icons.history,
                                           color: theme.colorScheme.secondary),
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Text(
-                                          'No standards yet. Hop into the Standards tab to build your library.',
+                                          'No recent projects yet. Save or open a project to pin it here.',
                                           style: theme.textTheme.bodyMedium
                                               ?.copyWith(color: Colors.white70),
                                         ),
@@ -347,13 +293,7 @@ class _JobTabState extends State<_JobTab> {
                                   ),
                                 )
                               else ...[
-                                ...standards.take(4).map((std) {
-                                  final details = [
-                                    if (std.parameters.isNotEmpty)
-                                      '${std.parameters.length} parameter${std.parameters.length == 1 ? '' : 's'}',
-                                    if (std.dynamicComponents.isNotEmpty)
-                                      '${std.dynamicComponents.length} dynamic component${std.dynamicComponents.length == 1 ? '' : 's'}',
-                                  ].join(' • ');
+                                ...recentProjects.map((entry) {
                                   return Container(
                                     margin: const EdgeInsets.symmetric(vertical: 8),
                                     padding: const EdgeInsets.all(18),
@@ -380,12 +320,9 @@ class _JobTabState extends State<_JobTab> {
                                               end: Alignment.bottomRight,
                                             ),
                                           ),
-                                          child: Text(
-                                            std.code,
-                                            textAlign: TextAlign.center,
-                                            style: theme.textTheme.labelLarge?.copyWith(
-                                              fontWeight: FontWeight.w700,
-                                            ),
+                                          child: Icon(
+                                            Icons.folder_special_outlined,
+                                            color: theme.colorScheme.secondary,
                                           ),
                                         ),
                                         const SizedBox(width: 16),
@@ -394,65 +331,43 @@ class _JobTabState extends State<_JobTab> {
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
                                               Text(
-                                                std.name.isEmpty ? std.code : std.name,
+                                                entry.name,
                                                 style: theme.textTheme.titleMedium?.copyWith(
                                                   fontWeight: FontWeight.w600,
                                                 ),
                                               ),
-                                              if (!std.approved) ...[
-                                                const SizedBox(height: 6),
-                                                Chip(
-                                                  backgroundColor:
-                                                      Colors.amber.withOpacity(0.2),
-                                                  label: Text(
-                                                    'Unapproved',
-                                                    style: TextStyle(
-                                                      color: Colors.amber.shade900,
-                                                      fontWeight: FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
                                               const SizedBox(height: 6),
                                               Text(
-                                                details.isEmpty
-                                                    ? 'No additional configuration yet.'
-                                                    : details,
+                                                'Opened ${_formatRecentTimestamp(entry.lastAccessedAt)}',
                                                 style: theme.textTheme.bodySmall
                                                     ?.copyWith(color: Colors.white70),
                                               ),
                                             ],
                                           ),
                                         ),
+                                        TextButton(
+                                          onPressed: () => _openRecentProject(entry.name),
+                                          child: const Text('Open'),
+                                        ),
                                       ],
                                     ),
                                   );
                                 }).toList(),
-                                if (standards.length > 4)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 12),
-                                    child: Text(
-                                      '+${standards.length - 4} more configured standard${standards.length - 4 == 1 ? '' : 's'}.',
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(color: Colors.white60),
-                                    ),
-                                  ),
                               ],
                               const SizedBox(height: 24),
                               Row(
                                 children: [
                                   FilledButton.icon(
-                                    onPressed: () =>
-                                        DefaultTabController.of(context)?.animateTo(1),
-                                    icon: const Icon(Icons.library_books_outlined),
-                                    label: const Text('Manage standards'),
+                                    onPressed: _loadProject,
+                                    icon: const Icon(Icons.folder_open_rounded),
+                                    label: const Text('Browse projects'),
                                   ),
                                   const SizedBox(width: 16),
                                   TextButton.icon(
                                     onPressed: () =>
-                                        DefaultTabController.of(context)?.animateTo(3),
-                                    icon: const Icon(Icons.tune),
-                                    label: const Text('Edit global parameters'),
+                                        _showArchivedProjects(),
+                                    icon: const Icon(Icons.archive_outlined),
+                                    label: const Text('Archived'),
                                   ),
                                 ],
                               ),
@@ -507,8 +422,8 @@ class _JobTabState extends State<_JobTab> {
     _openExistingProject(proj);
   }
 
-  void _openExistingProject(Project proj) {
-    Navigator.of(context).push(
+  Future<void> _openExistingProject(Project proj) async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ProjectScreen(
           initialCount: 0,
@@ -517,6 +432,34 @@ class _JobTabState extends State<_JobTab> {
         ),
       ),
     );
+    if (!mounted) return;
+    setState(() {
+      _recentFuture = _projectRepo.listRecentProjects();
+    });
+  }
+
+  Future<void> _openRecentProject(String name) async {
+    final proj = await _projectRepo.loadProject(name);
+    if (proj == null || !mounted) return;
+    await _openExistingProject(proj);
+  }
+
+  String _formatRecentTimestamp(DateTime timestamp) {
+    final now = DateTime.now();
+    final diff = now.difference(timestamp);
+    if (diff.inMinutes < 1) {
+      return 'just now';
+    }
+    if (diff.inMinutes < 60) {
+      final minutes = diff.inMinutes;
+      return '$minutes minute${minutes == 1 ? '' : 's'} ago';
+    }
+    if (diff.inHours < 24) {
+      final hours = diff.inHours;
+      return '$hours hour${hours == 1 ? '' : 's'} ago';
+    }
+    final days = diff.inDays;
+    return '$days day${days == 1 ? '' : 's'} ago';
   }
 }
 
