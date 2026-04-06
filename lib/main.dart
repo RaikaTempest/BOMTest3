@@ -26,7 +26,7 @@ class BomApp extends StatelessWidget {
         textTheme: ThemeData(brightness: Brightness.dark)
             .textTheme
             .apply(bodyColor: Colors.white, displayColor: Colors.white),
-        appBarTheme: AppBarTheme(
+        appBarTheme: AppBarThemeData(
           backgroundColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           foregroundColor: Colors.white,
@@ -39,7 +39,7 @@ class BomApp extends StatelessWidget {
             letterSpacing: 0.2,
           ),
         ),
-        tabBarTheme: TabBarTheme(
+        tabBarTheme: TabBarThemeData(
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white.withOpacity(0.65),
           labelStyle: const TextStyle(fontWeight: FontWeight.w600),
@@ -89,7 +89,7 @@ class BomApp extends StatelessWidget {
                 : Colors.white70,
           ),
         ),
-        inputDecorationTheme: InputDecorationTheme(
+        inputDecorationTheme: InputDecorationThemeData(
           filled: true,
           fillColor: glassFill,
           labelStyle: TextStyle(color: Colors.white.withOpacity(0.75)),
@@ -107,13 +107,13 @@ class BomApp extends StatelessWidget {
             borderSide: BorderSide(color: colorScheme.secondary),
           ),
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: Colors.white.withOpacity(0.06),
           shadowColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         ),
-        dialogTheme: DialogTheme(
+        dialogTheme: DialogThemeData(
           backgroundColor: const Color(0xFF0B1733),
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
