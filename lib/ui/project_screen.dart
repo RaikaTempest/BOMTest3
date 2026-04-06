@@ -32,6 +32,8 @@ class _ProjectScreenState extends State<ProjectScreen> {
   String? _name;
   String _initialStateSignature = '';
   List<StandardAssignment>? _copiedAssignments;
+  final Map<String, StandardDef> _standardsById = {};
+  final Map<String, StandardDef> _standardsByCode = {};
 
   @override
   void initState() {
@@ -40,6 +42,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
         List.generate(widget.initialCount, (_) => WorkLocation());
     _name = widget.name;
     _initialStateSignature = _serializeState();
+    _refreshStandardsLookup();
   }
 
   Future<void> _addLocation() async {
@@ -71,6 +74,51 @@ class _ProjectScreenState extends State<ProjectScreen> {
     }
   }
 
+  Future<void> _refreshStandardsLookup() async {
+    final repo = await createRepo();
+    final standards = await repo.listStandards();
+    if (!mounted) return;
+    setState(() {
+      _standardsById
+        ..clear()
+        ..addEntries(standards.map((std) => MapEntry(std.id, std)));
+      _standardsByCode
+        ..clear()
+        ..addEntries(standards.map((std) => MapEntry(std.code, std)));
+    });
+  }
+
+  StandardDef? _resolveStandard(StandardAssignment assignment) {
+    final byId = _standardsById[assignment.standardId.trim()];
+    if (byId != null) return byId;
+    final code = (assignment.metadata['code'] as String?)?.trim();
+    if (code != null && code.isNotEmpty) {
+      return _standardsByCode[code];
+    }
+    return _standardsByCode[assignment.standardId.trim()];
+  }
+
+  bool _isMissingValue(ParameterDef param, dynamic value) {
+    if (!param.required) return false;
+    if (value == null) return true;
+    if (value is String) return value.trim().isEmpty;
+    return false;
+  }
+
+  int _missingRequiredInputCount(WorkLocation location) {
+    var missing = 0;
+    for (final assignment in location.assignments) {
+      final standard = _resolveStandard(assignment);
+      if (standard == null) continue;
+      for (final param in standard.parameters) {
+        if (_isMissingValue(param, assignment.variables[param.key])) {
+          missing++;
+        }
+      }
+    }
+    return missing;
+  }
+
   Future<void> _openStandards(int index) async {
     final repo = await createRepo();
     final allStds = await repo.listStandards();
@@ -82,6 +130,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
             for (final assignment in locations[index].assignments)
               assignment.copy(),
           ],
+          locationLabel: 'Work location ${index + 1}',
         ),
       ),
     );
@@ -175,6 +224,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
                 itemBuilder: (context, index) {
                   final loc = locations[index];
                   final applied = loc.assignments.length;
+                  final missingInputs = _missingRequiredInputCount(loc);
                   return GlassContainer(
                     key: ValueKey(loc),
                     padding: const EdgeInsets.all(24),
@@ -189,6 +239,20 @@ class _ProjectScreenState extends State<ProjectScreen> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
+                            if (missingInputs > 0) ...[
+                              const SizedBox(width: 10),
+                              Chip(
+                                avatar: const Icon(Icons.warning_amber_rounded, size: 16),
+                                backgroundColor: Colors.amber.withOpacity(0.2),
+                                label: Text(
+                                  '$missingInputs missing input${missingInputs == 1 ? '' : 's'}',
+                                  style: TextStyle(
+                                    color: Colors.amber.shade900,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
                             const Spacer(),
                             IconButton(
                               tooltip: 'Remove location',
@@ -236,7 +300,9 @@ class _ProjectScreenState extends State<ProjectScreen> {
                                     Text(
                                       applied == 0
                                           ? 'No standards attached yet. Configure to get tailored components.'
-                                          : '$applied standard${applied == 1 ? '' : 's'} selected.',
+                                          : missingInputs > 0
+                                              ? '$applied standard${applied == 1 ? '' : 's'} selected • $missingInputs required value${missingInputs == 1 ? '' : 's'} still missing.'
+                                              : '$applied standard${applied == 1 ? '' : 's'} selected.',
                                       style: theme.textTheme.bodySmall
                                           ?.copyWith(color: Colors.white70),
                                     ),
@@ -590,10 +656,12 @@ class _StandardSelectionDialogState extends State<_StandardSelectionDialog> {
 class LocationStandardsScreen extends StatefulWidget {
   final List<StandardDef> available;
   final List<StandardAssignment> assignments;
+  final String locationLabel;
   const LocationStandardsScreen({
     super.key,
     required this.available,
     required this.assignments,
+    required this.locationLabel,
   });
 
   @override
@@ -607,6 +675,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
   final Map<String, dynamic> _sharedVariables = {};
   final Map<String, int> _parameterUsageCounts = {};
   final Map<String, TextEditingController> _textControllers = {};
+  final Map<String, bool> _expandedAssignments = {};
   String _initialStateSignature = '';
 
   String _normalizeAllowedValue(String value) => value.trim().toLowerCase();
@@ -651,6 +720,9 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     super.initState();
     assignments = widget.assignments.map((e) => e.copy()).toList();
     available = widget.available;
+    for (final assignment in assignments) {
+      _expandedAssignments[assignment.instanceId] = true;
+    }
     _hydrateAssignments();
     _refreshSharedParameters();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -957,6 +1029,21 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     return value.toString();
   }
 
+  int _missingRequiredInputCountForAssignment(
+    StandardAssignment assignment,
+    List<ParameterDef> params,
+  ) {
+    var missing = 0;
+    for (final param in params) {
+      if (!param.required) continue;
+      final value = assignment.variables[param.key];
+      if (value == null || (value is String && value.trim().isEmpty)) {
+        missing++;
+      }
+    }
+    return missing;
+  }
+
   Future<void> _addStandard() async {
     if (available.isEmpty) return;
     final std = await showDialog<StandardDef>(
@@ -993,6 +1080,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
       _syncAssignment(assignment, std);
       setState(() {
         assignments.add(assignment);
+        _expandedAssignments[assignment.instanceId] = true;
       });
       _refreshSharedParameters();
     }
@@ -1008,12 +1096,14 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     }
     setState(() {
       assignments.insert(index + 1, copy);
+      _expandedAssignments[copy.instanceId] = true;
     });
     _refreshSharedParameters();
   }
 
   void _removeAssignment(StandardAssignment assignment) {
     setState(() {
+      _expandedAssignments.remove(assignment.instanceId);
       assignments.remove(assignment);
     });
     _refreshSharedParameters();
@@ -1139,6 +1229,11 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     final isUnapproved = std != null && !std.approved;
     final params = std?.parameters ?? const <ParameterDef>[];
     final hasParams = params.isNotEmpty;
+    final missingInputs = _missingRequiredInputCountForAssignment(
+      assignment,
+      params,
+    );
+    final isExpanded = _expandedAssignments[assignment.instanceId] ?? true;
     return Container(
       key: ValueKey(assignment.instanceId),
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -1200,11 +1295,32 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
                             ?.copyWith(color: Colors.white70),
                       ),
                     ],
+                    if (missingInputs > 0) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        '$missingInputs required input${missingInputs == 1 ? '' : 's'} missing.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.amberAccent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
               Column(
                 children: [
+                  IconButton(
+                    tooltip: isExpanded ? 'Collapse' : 'Expand',
+                    icon: Icon(isExpanded
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded),
+                    onPressed: () {
+                      setState(() {
+                        _expandedAssignments[assignment.instanceId] = !isExpanded;
+                      });
+                    },
+                  ),
                   IconButton(
                     tooltip: 'Duplicate standard',
                     icon: const Icon(Icons.copy_all_outlined),
@@ -1219,7 +1335,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
               ),
             ],
           ),
-          if (hasParams) ...[
+          if (isExpanded && hasParams) ...[
             const SizedBox(height: 12),
             for (final p in params)
               Padding(
@@ -1292,6 +1408,27 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
         padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
         child: ListView(
           children: [
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                color: Colors.white.withOpacity(0.04),
+                border: Border.all(color: Colors.white.withOpacity(0.08)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.place_outlined, color: theme.colorScheme.secondary),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Configuring ${widget.locationLabel}',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             GlassContainer(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

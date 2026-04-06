@@ -74,4 +74,18 @@ void main() {
     final loaded = await repo.loadProject('p1');
     expect(loaded?.locations.first.barcode, 'z');
   });
+
+  test('tracks recent projects for active files', () async {
+    final repo = LocalProjectRepo();
+    await repo.saveProject(Project(name: 'alpha', locations: []));
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await repo.saveProject(Project(name: 'beta', locations: []));
+
+    var recent = await repo.listRecentProjects();
+    expect(recent.map((entry) => entry.name).toList(), ['beta', 'alpha']);
+
+    await repo.archiveProject('beta');
+    recent = await repo.listRecentProjects();
+    expect(recent.map((entry) => entry.name).toList(), ['alpha']);
+  });
 }
