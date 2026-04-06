@@ -609,6 +609,43 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
   final Map<String, TextEditingController> _textControllers = {};
   String _initialStateSignature = '';
 
+  String _normalizeAllowedValue(String value) => value.trim().toLowerCase();
+
+  Map<String, String> _buildAllowedValueLookup(ParameterDef parameter) {
+    final lookup = <String, String>{};
+    for (final option in parameter.allowedValues) {
+      final normalized = _normalizeAllowedValue(option);
+      lookup.putIfAbsent(normalized, () => option);
+    }
+    return lookup;
+  }
+
+  ParameterDef? _findParameterDef(String key) {
+    for (final assignment in assignments) {
+      final std = _findStandard(assignment);
+      if (std == null) continue;
+      for (final parameter in std.parameters) {
+        if (parameter.key == key) {
+          return parameter;
+        }
+      }
+    }
+    return null;
+  }
+
+  bool _usesAllowedValues(ParameterDef parameter) {
+    return parameter.allowedValues.isNotEmpty &&
+        parameter.type != ParamType.boolean;
+  }
+
+  String? _toCanonicalAllowedValue(ParameterDef parameter, dynamic value) {
+    if (!_usesAllowedValues(parameter) || value is! String) {
+      return null;
+    }
+    final lookup = _buildAllowedValueLookup(parameter);
+    return lookup[_normalizeAllowedValue(value)];
+  }
+
   @override
   void initState() {
     super.initState();
@@ -663,10 +700,33 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
         .toList();
     final newShared = <String, dynamic>{};
     for (final key in usageCounts.keys) {
+      final parameter = _findParameterDef(key);
       if (firstValues.containsKey(key)) {
-        newShared[key] = firstValues[key];
+        final candidate = firstValues[key];
+        final canonical = parameter == null
+            ? null
+            : _toCanonicalAllowedValue(parameter, candidate);
+        if (candidate is String &&
+            parameter != null &&
+            _usesAllowedValues(parameter) &&
+            canonical == null) {
+          newShared[key] = null;
+        } else {
+          newShared[key] = canonical ?? candidate;
+        }
       } else if (previousShared.containsKey(key)) {
-        newShared[key] = previousShared[key];
+        final candidate = previousShared[key];
+        final canonical = parameter == null
+            ? null
+            : _toCanonicalAllowedValue(parameter, candidate);
+        if (candidate is String &&
+            parameter != null &&
+            _usesAllowedValues(parameter) &&
+            canonical == null) {
+          newShared[key] = null;
+        } else {
+          newShared[key] = canonical ?? candidate;
+        }
       } else {
         newShared[key] = null;
       }
@@ -824,15 +884,29 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     bool removeValue = false,
     bool syncController = true,
   }) {
+    final parameter = _findParameterDef(key);
+    final canonical = parameter == null
+        ? null
+        : _toCanonicalAllowedValue(parameter, value);
+    final shouldClearForInvalidAllowedValue = value is String &&
+        parameter != null &&
+        _usesAllowedValues(parameter) &&
+        canonical == null;
+    final resolvedValue = canonical ?? value;
+
     setState(() {
-      _sharedVariables[key] = removeValue ? null : value;
+      _sharedVariables[key] = (removeValue || shouldClearForInvalidAllowedValue)
+          ? null
+          : resolvedValue;
 
       for (final assignment in assignments) {
         if (_assignmentUsesKey(assignment, key)) {
-          if (removeValue || value == null) {
+          if (removeValue ||
+              shouldClearForInvalidAllowedValue ||
+              resolvedValue == null) {
             assignment.variables.remove(key);
           } else {
-            assignment.variables[key] = value;
+            assignment.variables[key] = resolvedValue;
           }
         }
       }
@@ -841,7 +915,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     if (!removeValue && syncController) {
       final controller = _textControllers[key];
       if (controller != null) {
-        final text = _valueToControllerText(value);
+        final text = _valueToControllerText(resolvedValue);
         if (controller.text != text) {
           controller.value = controller.value.copyWith(
             text: text,
@@ -963,12 +1037,19 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     final currentValue = _sharedVariables[p.key];
     final hasAllowedValues = p.allowedValues.isNotEmpty;
     Widget buildAllowedValuesDropdown() {
+      final canonicalCurrent = _toCanonicalAllowedValue(p, currentValue);
+      final hasInvalidAllowedValue = currentValue is String &&
+          currentValue.trim().isNotEmpty &&
+          canonicalCurrent == null;
       return DropdownButtonFormField<String>(
         key: ValueKey('${p.key}_enum_shared'),
-        decoration: InputDecoration(labelText: label),
-        value: currentValue is String && p.allowedValues.contains(currentValue)
-            ? currentValue
-            : null,
+        decoration: InputDecoration(
+          labelText: label,
+          helperText: hasInvalidAllowedValue
+              ? 'Saved value is not valid for this list. Please reselect.'
+              : null,
+        ),
+        value: canonicalCurrent,
         items: p.allowedValues
             .map((v) => DropdownMenuItem(value: v, child: Text(v)))
             .toList(),
