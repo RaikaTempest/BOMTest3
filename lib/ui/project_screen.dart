@@ -961,6 +961,29 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
   Widget _buildParamField(ParameterDef p) {
     final label = p.unit == null ? p.key : '${p.key} (${p.unit})';
     final currentValue = _sharedVariables[p.key];
+    final hasAllowedValues = p.allowedValues.isNotEmpty;
+    Widget buildAllowedValuesDropdown() {
+      return DropdownButtonFormField<String>(
+        key: ValueKey('${p.key}_enum_shared'),
+        decoration: InputDecoration(labelText: label),
+        value: currentValue is String && p.allowedValues.contains(currentValue)
+            ? currentValue
+            : null,
+        items: p.allowedValues
+            .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+            .toList(),
+        onChanged: (v) {
+          if (v == null) {
+            _setSharedValue(p.key, null, removeValue: true);
+          } else {
+            _setSharedValue(p.key, v);
+          }
+        },
+      );
+    }
+    if (hasAllowedValues && p.type != ParamType.boolean) {
+      return buildAllowedValuesDropdown();
+    }
     switch (p.type) {
       case ParamType.boolean:
         return SwitchListTile(
@@ -971,23 +994,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
           onChanged: (v) => _setSharedValue(p.key, v),
         );
       case ParamType.enumType:
-        return DropdownButtonFormField<String>(
-          key: ValueKey('${p.key}_enum_shared'),
-          decoration: InputDecoration(labelText: label),
-          value: currentValue is String && p.allowedValues.contains(currentValue)
-              ? currentValue
-              : null,
-          items: p.allowedValues
-              .map((v) => DropdownMenuItem(value: v, child: Text(v)))
-              .toList(),
-          onChanged: (v) {
-            if (v == null) {
-              _setSharedValue(p.key, null, removeValue: true);
-            } else {
-              _setSharedValue(p.key, v);
-            }
-          },
-        );
+        return buildAllowedValuesDropdown();
       case ParamType.number:
         {
           final controller = _ensureTextController(
