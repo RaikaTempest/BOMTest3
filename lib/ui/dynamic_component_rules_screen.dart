@@ -257,6 +257,44 @@ class _DynamicComponentRulesScreenState
     }
   }
 
+  RuleDef _cloneRule(RuleDef source) {
+    return RuleDef(
+      expr: (jsonDecode(jsonEncode(source.expr)) as Map).cast<String, dynamic>(),
+      outputs: source.outputs
+          .map(
+            (output) => OutputSpec(
+              mm: output.mm,
+              qty: output.qty,
+              qtyFormula: output.qtyFormula,
+            ),
+          )
+          .toList(),
+      priority: source.priority,
+    );
+  }
+
+  Future<void> _duplicateRule(int index) async {
+    final clonedRule = _cloneRule(_rules[index]);
+    final duplicated = await Navigator.of(context).push<RuleDef>(
+      MaterialPageRoute(
+        builder: (_) => RuleWizard(
+          existing: clonedRule,
+          parameters: widget.parameters,
+        ),
+      ),
+    );
+    if (duplicated != null) {
+      setState(() {
+        _rules.add(duplicated);
+        _sortRules();
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Rule duplicated')),
+      );
+    }
+  }
+
   void _deleteRule(int index) {
     setState(() {
       _rules.removeAt(index);
@@ -999,6 +1037,10 @@ class _DynamicComponentRulesScreenState
                               TextButton(
                                 onPressed: () => _editRule(entry.key),
                                 child: const Text('Edit'),
+                              ),
+                              TextButton(
+                                onPressed: () => _duplicateRule(entry.key),
+                                child: const Text('Duplicate'),
                               ),
                               TextButton(
                                 onPressed: () => _deleteRule(entry.key),
