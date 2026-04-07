@@ -296,7 +296,49 @@ class _RuleWizardState extends State<RuleWizard> {
     }
   }
 
+  ParameterDef? _parameterByKey(String key) {
+    final normalizedKey = key.trim().toLowerCase();
+    if (normalizedKey.isEmpty) return null;
+    for (final param in widget.parameters) {
+      if (param.key.trim().toLowerCase() == normalizedKey) {
+        return param;
+      }
+    }
+    return null;
+  }
+
+  List<String> _valueSuggestionsForCondition(
+    _ConditionFields f,
+    String query,
+  ) {
+    final parameter = _parameterByKey(f.param.text);
+    if (parameter == null) return const [];
+
+    final suggestions = <String>{
+      ...parameter.allowedValues
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty),
+    };
+
+    if (parameter.type == ParamType.boolean) {
+      suggestions.addAll(const ['true', 'false']);
+    }
+
+    if (suggestions.isEmpty) return const [];
+
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) {
+      return suggestions.toList();
+    }
+
+    return suggestions
+        .where((e) => e.toLowerCase().contains(normalizedQuery))
+        .toList();
+  }
+
   Widget _buildCondition(_ConditionFields f, int index) {
+    final hasValueSuggestions = _valueSuggestionsForCondition(f, '').isNotEmpty;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -357,9 +399,41 @@ class _RuleWizardState extends State<RuleWizard> {
           const SizedBox(width: 8),
           Expanded(
             flex: 3,
-            child: TextField(
-              controller: f.value,
-              decoration: const InputDecoration(labelText: 'Value'),
+            child: Autocomplete<String>(
+              optionsBuilder: (textEditingValue) {
+                return _valueSuggestionsForCondition(f, textEditingValue.text);
+              },
+              initialValue: TextEditingValue(text: f.value.text),
+              fieldViewBuilder: (
+                context,
+                controller,
+                focusNode,
+                onFieldSubmitted,
+              ) {
+                if (controller.text != f.value.text) {
+                  controller.value = TextEditingValue(
+                    text: f.value.text,
+                    selection: TextSelection.collapsed(
+                      offset: f.value.text.length,
+                    ),
+                  );
+                }
+                return TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  decoration: InputDecoration(
+                    labelText: 'Value',
+                    helperText:
+                        hasValueSuggestions
+                            ? 'Suggested from allowed values'
+                            : null,
+                  ),
+                  onChanged: (v) => f.value.text = v,
+                );
+              },
+              onSelected: (selection) {
+                f.value.text = selection;
+              },
             ),
           ),
           IconButton(
