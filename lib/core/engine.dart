@@ -17,16 +17,16 @@ class RuleEngine {
       dynamicByName[name] = dc;
     }
 
-    final selectedRules = <DynamicComponentDef, RuleDef?>{};
+    final selectedRules = <DynamicComponentDef, List<RuleDef>>{};
     final matrixSelections = <DynamicComponentDef, _MatrixSelection>{};
 
-    RuleDef? selectRule(DynamicComponentDef dc) {
+    List<RuleDef> selectRules(DynamicComponentDef dc) {
       if (selectedRules.containsKey(dc)) {
-        return selectedRules[dc];
+        return selectedRules[dc]!;
       }
-      final rule = _selectRule(dc, inputs);
-      selectedRules[dc] = rule;
-      return rule;
+      final rules = _selectRules(dc, inputs);
+      selectedRules[dc] = rules;
+      return rules;
     }
 
     _MatrixSelection matrixSelection(DynamicComponentDef dc) {
@@ -45,7 +45,7 @@ class RuleEngine {
             mm = matrixResult.primaryMm;
           }
         }
-        mm ??= provider != null ? _firstNonEmptyMm(selectRule(provider)) : null;
+        mm ??= provider != null ? _firstNonEmptyMm(selectRules(provider)) : null;
         if (mm != null) {
           bom.add(
             BomLine(
@@ -96,23 +96,25 @@ class RuleEngine {
       if (matrixResult.blockRules) {
         continue;
       }
-      final chosen = selectRule(dc);
-      if (chosen == null) continue;
-      for (final out in chosen.outputs) {
-        final qty = out.qty ?? QtyFormula.evalInt(out.qtyFormula ?? '1', numericInputs);
-        bom.add(BomLine(mm: out.mm, qty: qty, source: 'rule:${dc.name}'));
+      final chosen = selectRules(dc);
+      if (chosen.isEmpty) continue;
+      for (final rule in chosen) {
+        for (final out in rule.outputs) {
+          final qty = out.qty ?? QtyFormula.evalInt(out.qtyFormula ?? '1', numericInputs);
+          bom.add(BomLine(mm: out.mm, qty: qty, source: 'rule:${dc.name}'));
+        }
       }
     }
     return bom;
   }
 
-  RuleDef? _selectRule(DynamicComponentDef dc, Map<String, dynamic> inputs) {
+  List<RuleDef> _selectRules(DynamicComponentDef dc, Map<String, dynamic> inputs) {
     final matches = <RuleDef>[];
     for (final r in dc.rules) {
       final ok = _logic.apply(r.expr, inputs);
       if (ok == true) matches.add(r);
     }
-    if (matches.isEmpty) return null;
+    if (matches.isEmpty) return const [];
 
     matches.sort((a, b) {
       final p = (b.priority) - (a.priority);
@@ -122,14 +124,15 @@ class RuleEngine {
       return lb - la; // more specific first
     });
 
-    return matches.first;
+    return matches;
   }
 
-  String? _firstNonEmptyMm(RuleDef? rule) {
-    if (rule == null) return null;
-    for (final out in rule.outputs) {
-      final mm = out.mm.trim();
-      if (mm.isNotEmpty) return mm;
+  String? _firstNonEmptyMm(List<RuleDef> rules) {
+    for (final rule in rules) {
+      for (final out in rule.outputs) {
+        final mm = out.mm.trim();
+        if (mm.isNotEmpty) return mm;
+      }
     }
     return null;
   }
