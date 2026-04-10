@@ -41,7 +41,7 @@ void main() {
     expect(bom.single.qty, 2);
   });
 
-  test('priority and specificity choose the right rule', () {
+  test('all matching rules emit outputs in priority/specificity order', () {
     final std = StandardDef(
       id: _uuid.v4(),
       code: 'T', name: 'Test',
@@ -55,7 +55,51 @@ void main() {
     );
     final eng = RuleEngine();
     final bom = eng.evaluate(std, {'PoleHeight': 35});
-    expect(bom.single.mm, 'MM#MID');
+    expect(bom, hasLength(2));
+    expect(bom.map((line) => line.mm), ['MM#MID', 'MM#LOW']);
+  });
+
+  test('all matching rules emit all outputs', () {
+    final std = StandardDef(
+      id: _uuid.v4(),
+      code: 'T',
+      name: 'Test',
+      parameters: [ParameterDef(key: 'wire', type: ParamType.enumType, allowedValues: ['2/0'])],
+      dynamicComponents: [
+        DynamicComponentDef(
+          name: 'Conn',
+          rules: [
+            RuleDef(
+              priority: 1,
+              expr: {
+                '==': [
+                  {'var': 'wire'},
+                  '2/0',
+                ],
+              },
+              outputs: [OutputSpec(mm: 'MM#A', qty: 1)],
+            ),
+            RuleDef(
+              priority: 0,
+              expr: {
+                'in': [
+                  {'var': 'wire'},
+                  ['1/0', '2/0'],
+                ],
+              },
+              outputs: [OutputSpec(mm: 'MM#B', qty: 2)],
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final eng = RuleEngine();
+    final bom = eng.evaluate(std, {'wire': '2/0'});
+
+    expect(bom, hasLength(2));
+    expect(bom.map((line) => line.mm), ['MM#A', 'MM#B']);
+    expect(bom.map((line) => line.qty), [1, 2]);
   });
 
   test('qty formula computes simple arithmetic', () {
@@ -120,6 +164,63 @@ void main() {
         (line) =>
             line.source == 'static:Conn' &&
             line.mm == 'MM#SMALL' &&
+            line.qty == 5 &&
+            line.label == 'Brace',
+      ),
+      isTrue,
+    );
+  });
+
+  test('static component borrows first non-empty MM across all matching provider rules', () {
+    final std = StandardDef(
+      id: _uuid.v4(),
+      code: 'T',
+      name: 'Test',
+      staticComponents: [
+        StaticComponent(
+          label: 'Brace',
+          mm: 'MM#FALLBACK',
+          dynamicMmComponent: 'Conn',
+          qty: 5,
+        ),
+      ],
+      dynamicComponents: [
+        DynamicComponentDef(
+          name: 'Conn',
+          rules: [
+            RuleDef(
+              priority: 1,
+              expr: {
+                '==': [
+                  {'var': 'size'},
+                  'small',
+                ],
+              },
+              outputs: [OutputSpec(mm: '   ', qty: 1)],
+            ),
+            RuleDef(
+              priority: 0,
+              expr: {
+                'in': [
+                  {'var': 'size'},
+                  ['small', 'medium'],
+                ],
+              },
+              outputs: [OutputSpec(mm: 'MM#BORROWED', qty: 1)],
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final eng = RuleEngine();
+    final bom = eng.evaluate(std, {'size': 'small'});
+
+    expect(
+      bom.any(
+        (line) =>
+            line.source == 'static:Conn' &&
+            line.mm == 'MM#BORROWED' &&
             line.qty == 5 &&
             line.label == 'Brace',
       ),
@@ -395,4 +496,3 @@ void main() {
     expect(bom.single.source, 'rule:Conn');
   });
 }
-
