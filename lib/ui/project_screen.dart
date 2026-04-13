@@ -684,6 +684,54 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
 
   String _normalizeAllowedValue(String value) => value.trim().toLowerCase();
 
+  Set<String> _isolatedKeysFor(StandardAssignment assignment) {
+    final raw = assignment.metadata['isolated_keys'];
+    if (raw is! List) return <String>{};
+    final out = <String>{};
+    for (final entry in raw) {
+      final key = entry?.toString().trim() ?? '';
+      if (key.isNotEmpty) {
+        out.add(key);
+      }
+    }
+    return out;
+  }
+
+  bool _isIsolatedFor(StandardAssignment assignment, String key) {
+    return _isolatedKeysFor(assignment).contains(key);
+  }
+
+  void _setIsolatedFor(
+    StandardAssignment assignment,
+    String key,
+    bool isolated,
+  ) {
+    final keys = _isolatedKeysFor(assignment);
+    if (isolated) {
+      keys.add(key);
+      if (!assignment.variables.containsKey(key) &&
+          _sharedVariables.containsKey(key) &&
+          _sharedVariables[key] != null) {
+        assignment.variables[key] = _sharedVariables[key];
+      }
+    } else {
+      keys.remove(key);
+      final sharedValue = _sharedVariables[key];
+      if (sharedValue == null) {
+        assignment.variables.remove(key);
+      } else {
+        assignment.variables[key] = sharedValue;
+      }
+    }
+
+    if (keys.isEmpty) {
+      assignment.metadata.remove('isolated_keys');
+    } else {
+      assignment.metadata['isolated_keys'] = keys.toList()..sort();
+    }
+    _refreshSharedParameters();
+  }
+
   Map<String, String> _buildAllowedValueLookup(ParameterDef parameter) {
     final lookup = <String, String>{};
     for (final option in parameter.allowedValues) {
@@ -753,6 +801,7 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
 
     for (final assignment in assignments) {
       final keysForAssignment = <String>{};
+      final isolatedKeys = _isolatedKeysFor(assignment);
       final std = _findStandard(assignment);
       if (std != null) {
         for (final param in std.parameters) {
@@ -763,6 +812,9 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
       }
       assignmentKeys[assignment] = keysForAssignment;
       for (final key in keysForAssignment) {
+        if (isolatedKeys.contains(key)) {
+          continue;
+        }
         usageCounts[key] = (usageCounts[key] ?? 0) + 1;
         if (!firstValues.containsKey(key) &&
             assignment.variables.containsKey(key)) {
@@ -819,7 +871,11 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
       for (final entry in assignmentKeys.entries) {
         final assignment = entry.key;
         final keysForAssignment = entry.value;
+        final isolatedKeys = _isolatedKeysFor(assignment);
         for (final key in keysForAssignment) {
+          if (isolatedKeys.contains(key)) {
+            continue;
+          }
           if (!_sharedVariables.containsKey(key)) {
             assignment.variables.remove(key);
             continue;
@@ -840,6 +896,9 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
 
     for (final entry in _textControllers.entries.toList()) {
       final key = entry.key;
+      if (key.contains(':')) {
+        continue;
+      }
       if (!usageCounts.containsKey(key)) {
         continue;
       }
@@ -892,9 +951,17 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
   }
 
   void _pruneVariablesFor(StandardAssignment assignment, StandardDef std) {
-    if (assignment.variables.isEmpty) return;
     final allowed = std.parameters.map((p) => p.key).toSet();
-    assignment.variables.removeWhere((key, _) => !allowed.contains(key));
+    if (assignment.variables.isNotEmpty) {
+      assignment.variables.removeWhere((key, _) => !allowed.contains(key));
+    }
+    final isolated = _isolatedKeysFor(assignment)
+      ..removeWhere((key) => !allowed.contains(key));
+    if (isolated.isEmpty) {
+      assignment.metadata.remove('isolated_keys');
+    } else {
+      assignment.metadata['isolated_keys'] = isolated.toList()..sort();
+    }
   }
 
   bool _assignmentUsesKey(StandardAssignment assignment, String key) {
@@ -976,7 +1043,8 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
           : resolvedValue;
 
       for (final assignment in assignments) {
-        if (_assignmentUsesKey(assignment, key)) {
+        if (_assignmentUsesKey(assignment, key) &&
+            !_isIsolatedFor(assignment, key)) {
           if (removeValue ||
               shouldClearForInvalidAllowedValue ||
               resolvedValue == null) {
@@ -1011,6 +1079,43 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     final controller = TextEditingController(text: initialValue);
     _textControllers[key] = controller;
     return controller;
+  }
+
+  void _setAssignmentValue(
+    StandardAssignment assignment,
+    ParameterDef parameter,
+    dynamic value, {
+    bool removeValue = false,
+    bool syncController = true,
+  }) {
+    final canonical = _toCanonicalAllowedValue(parameter, value);
+    final shouldClearForInvalidAllowedValue = value is String &&
+        _usesAllowedValues(parameter) &&
+        canonical == null;
+    final resolvedValue = canonical ?? value;
+    final controllerKey = '${assignment.instanceId}:${parameter.key}';
+    setState(() {
+      if (removeValue ||
+          shouldClearForInvalidAllowedValue ||
+          resolvedValue == null) {
+        assignment.variables.remove(parameter.key);
+      } else {
+        assignment.variables[parameter.key] = resolvedValue;
+      }
+    });
+    if (!removeValue && syncController) {
+      final controller = _textControllers[controllerKey];
+      if (controller != null) {
+        final text = _valueToControllerText(resolvedValue);
+        if (controller.text != text) {
+          controller.value = controller.value.copyWith(
+            text: text,
+            selection: TextSelection.collapsed(offset: text.length),
+            composing: TextRange.empty,
+          );
+        }
+      }
+    }
   }
 
   String _formatSharedValue(ParameterDef param) {
@@ -1217,10 +1322,102 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
     }
   }
 
+  Widget _buildIsolatedParamField(
+    StandardAssignment assignment,
+    ParameterDef p,
+  ) {
+    final label = p.unit == null ? p.key : '${p.key} (${p.unit})';
+    final currentValue = assignment.variables[p.key];
+    Widget buildAllowedValuesDropdown() {
+      final canonicalCurrent = _toCanonicalAllowedValue(p, currentValue);
+      final hasInvalidAllowedValue = currentValue is String &&
+          currentValue.trim().isNotEmpty &&
+          canonicalCurrent == null;
+      return DropdownButtonFormField<String>(
+        key: ValueKey('${assignment.instanceId}_${p.key}_enum_isolated'),
+        decoration: InputDecoration(
+          labelText: '$label (overwrite shared value)',
+          helperText: hasInvalidAllowedValue
+              ? 'Saved value is not valid for this list. Please reselect.'
+              : null,
+        ),
+        value: canonicalCurrent,
+        items: p.allowedValues
+            .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+            .toList(),
+        onChanged: (v) => _setAssignmentValue(
+          assignment,
+          p,
+          v,
+          removeValue: v == null,
+        ),
+      );
+    }
+    if (p.allowedValues.isNotEmpty && p.type != ParamType.boolean) {
+      return buildAllowedValuesDropdown();
+    }
+    switch (p.type) {
+      case ParamType.boolean:
+        return SwitchListTile(
+          key: ValueKey('${assignment.instanceId}_${p.key}_bool_isolated'),
+          value: (currentValue as bool?) ?? false,
+          title: Text('$label (overwrite shared value)'),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+          onChanged: (v) => _setAssignmentValue(assignment, p, v),
+        );
+      case ParamType.enumType:
+        return buildAllowedValuesDropdown();
+      case ParamType.number:
+        final controller = _ensureTextController(
+          '${assignment.instanceId}:${p.key}',
+          currentValue == null ? '' : currentValue.toString(),
+        );
+        return TextFormField(
+          key: ValueKey('${assignment.instanceId}_${p.key}_num_isolated'),
+          controller: controller,
+          decoration:
+              InputDecoration(labelText: '$label (overwrite shared value)'),
+          keyboardType: TextInputType.number,
+          onChanged: (v) {
+            final parsed = double.tryParse(v);
+            if (parsed == null) {
+              _setAssignmentValue(
+                assignment,
+                p,
+                null,
+                removeValue: true,
+                syncController: false,
+              );
+            } else {
+              _setAssignmentValue(
+                assignment,
+                p,
+                parsed,
+                syncController: false,
+              );
+            }
+          },
+        );
+      case ParamType.text:
+      default:
+        final controller = _ensureTextController(
+          '${assignment.instanceId}:${p.key}',
+          currentValue?.toString() ?? '',
+        );
+        return TextFormField(
+          key: ValueKey('${assignment.instanceId}_${p.key}_text_isolated'),
+          controller: controller,
+          decoration:
+              InputDecoration(labelText: '$label (overwrite shared value)'),
+          onChanged: (v) => _setAssignmentValue(assignment, p, v),
+        );
+    }
+  }
+
   Widget _buildAssignmentCard(
     int index,
     StandardAssignment assignment,
-    Set<String> renderedKeys,
+    Map<String, String> firstSharedAssignmentForKey,
   ) {
     final theme = Theme.of(context);
     final std = _findStandard(assignment);
@@ -1344,24 +1541,67 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
             for (final p in params)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
-                child: renderedKeys.add(p.key)
-                    ? _buildParamField(p)
-                    : Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          color: Colors.white.withOpacity(0.02),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.06),
+                child: _isIsolatedFor(assignment, p.key)
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildIsolatedParamField(assignment, p),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: () =>
+                                  _setIsolatedFor(assignment, p.key, false),
+                              icon: const Icon(Icons.link, size: 16),
+                              label: const Text('Use shared value'),
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          '${p.key} reuses the shared value ${_formatSharedValue(p)} '
-                          'across ${_parameterUsageCounts[p.key] ?? 1} standards.',
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: Colors.white70),
-                        ),
-                      ),
+                        ],
+                      )
+                    : firstSharedAssignmentForKey[p.key] == assignment.instanceId
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildParamField(p),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                  onPressed: () =>
+                                      _setIsolatedFor(assignment, p.key, true),
+                                  icon: const Icon(Icons.edit, size: 16),
+                                  label: const Text('Overwrite shared value'),
+                                ),
+                              ),
+                            ],
+                          )
+                        : Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              color: Colors.white.withOpacity(0.02),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.06),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${p.key} reuses the shared value ${_formatSharedValue(p)} '
+                                  'across ${_parameterUsageCounts[p.key] ?? 1} standards.',
+                                  style: theme.textTheme.bodySmall
+                                      ?.copyWith(color: Colors.white70),
+                                ),
+                                const SizedBox(height: 8),
+                                TextButton.icon(
+                                  onPressed: () =>
+                                      _setIsolatedFor(assignment, p.key, true),
+                                  icon: const Icon(Icons.edit, size: 16),
+                                  label:
+                                      const Text('Overwrite shared value'),
+                                ),
+                              ],
+                            ),
+                          ),
               ),
           ],
         ],
@@ -1372,7 +1612,18 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final renderedKeys = <String>{};
+    final firstSharedAssignmentForKey = <String, String>{};
+    for (final assignment in assignments) {
+      final std = _findStandard(assignment);
+      if (std == null) continue;
+      for (final p in std.parameters) {
+        if (_isIsolatedFor(assignment, p.key)) continue;
+        firstSharedAssignmentForKey.putIfAbsent(
+          p.key,
+          () => assignment.instanceId,
+        );
+      }
+    }
     return WillPopScope(
       onWillPop: _confirmDiscardChanges,
       child: BomScaffold(
@@ -1469,7 +1720,11 @@ class _LocationStandardsScreenState extends State<LocationStandardsScreen> {
                     )
                   else ...[
                     for (var i = 0; i < assignments.length; i++)
-                      _buildAssignmentCard(i, assignments[i], renderedKeys),
+                      _buildAssignmentCard(
+                        i,
+                        assignments[i],
+                        firstSharedAssignmentForKey,
+                      ),
                   ],
                   const SizedBox(height: 16),
                   FilledButton.tonalIcon(
